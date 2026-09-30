@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { parseTrace, type ParsedTrace } from "@/lib/trace-parser";
+import { inspectSource, type SourceContext } from "@/lib/source-inspector";
 
 type Screen =
   | "dashboard"
@@ -40,13 +41,26 @@ export default function Home() {
   const [showCapture, setShowCapture] = useState(false);
   const [trace, setTrace] = useState("");
   const [parsedTrace, setParsedTrace] = useState<ParsedTrace | null>(null);
+  const [sourceContext, setSourceContext] = useState<SourceContext | null>(
+    null,
+  );
 
   function startAnalysis() {
     if (!trace.trim()) return;
 
     const parsed = parseTrace(trace);
+    const primaryFrame = parsed.frames[0];
 
     setParsedTrace(parsed);
+
+    if (primaryFrame) {
+      setSourceContext(
+        inspectSource(primaryFrame.file, primaryFrame.line),
+      );
+    } else {
+      setSourceContext(null);
+    }
+
     setShowCapture(false);
     setScreen("analysis");
 
@@ -56,6 +70,7 @@ export default function Home() {
   function reset() {
     setTrace("");
     setParsedTrace(null);
+    setSourceContext(null);
     setScreen("dashboard");
   }
 
@@ -73,6 +88,7 @@ export default function Home() {
       {screen === "diagnosis" && (
         <Diagnosis
           parsedTrace={parsedTrace}
+          sourceContext={sourceContext}
           onFix={() => setScreen("fix")}
           onBack={() => setScreen("dashboard")}
         />
@@ -273,7 +289,7 @@ function Analysis({ trace }: { trace: string }) {
           "Evidence captured",
           "Stack trace parsed",
           "Source location identified",
-          "Root cause analysis",
+          "Source context loaded",
         ].map((step, index) => (
           <div
             key={step}
@@ -281,12 +297,12 @@ function Analysis({ trace }: { trace: string }) {
           >
             <span
               className={`flex h-6 w-6 items-center justify-center rounded-full font-mono text-[10px] ${
-                index < 2
+                index < 3
                   ? "bg-emerald-400/10 text-emerald-400"
                   : "bg-zinc-900 text-zinc-600"
               }`}
             >
-              {index < 2 ? "✓" : "•"}
+              {index < 3 ? "✓" : "•"}
             </span>
 
             <span className="text-xs text-zinc-400">{step}</span>
@@ -309,10 +325,12 @@ function Analysis({ trace }: { trace: string }) {
 
 function Diagnosis({
   parsedTrace,
+  sourceContext,
   onFix,
   onBack,
 }: {
   parsedTrace: ParsedTrace | null;
+  sourceContext: SourceContext | null;
   onFix: () => void;
   onBack: () => void;
 }) {
@@ -344,29 +362,84 @@ function Diagnosis({
         </div>
 
         <span className="w-fit rounded-full bg-emerald-400/10 px-3 py-1.5 font-mono text-[10px] text-emerald-400">
-          Parsed from trace
+          Source mapped
         </span>
       </div>
 
-      <div className="mt-10 grid gap-3 lg:grid-cols-3">
+      <div className="mt-10 rounded-xl border border-zinc-900 bg-[#030405] overflow-hidden">
+        <div className="flex items-center justify-between border-b border-zinc-900 px-4 py-3">
+          <span className="font-mono text-[10px] text-zinc-500">
+            {sourceContext?.file ?? "Source unavailable"}
+          </span>
+
+          {sourceContext && (
+            <span className="font-mono text-[9px] text-zinc-700">
+              lines {sourceContext.startLine}-{sourceContext.endLine}
+            </span>
+          )}
+        </div>
+
+        {sourceContext ? (
+          <div className="overflow-x-auto py-3">
+            {sourceContext.lines.map((sourceLine) => (
+              <div
+                key={sourceLine.number}
+                className={`flex min-w-max px-4 py-1 ${
+                  sourceLine.isTarget ? "bg-red-400/10" : ""
+                }`}
+              >
+                <span
+                  className={`w-10 shrink-0 text-right font-mono text-[10px] ${
+                    sourceLine.isTarget
+                      ? "text-red-400"
+                      : "text-zinc-800"
+                  }`}
+                >
+                  {sourceLine.number}
+                </span>
+
+                <span className="mx-4 font-mono text-[10px] text-zinc-800">
+                  |
+                </span>
+
+                <code
+                  className={`font-mono text-[10px] ${
+                    sourceLine.isTarget
+                      ? "text-red-300"
+                      : "text-zinc-500"
+                  }`}
+                >
+                  {sourceLine.code}
+                </code>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="p-5 text-xs text-zinc-700">
+            No matching source file found.
+          </div>
+        )}
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-3">
         <div className="rounded-xl border border-zinc-900 bg-zinc-950 p-5 lg:col-span-2">
           <p className="font-mono text-[9px] uppercase tracking-wider text-zinc-700">
-            Root cause
+            Evidence
           </p>
 
           <p className="mt-4 text-sm leading-7 text-zinc-300">
-            TraceLens located the failure at{" "}
+            The stack trace points to{" "}
             <code className="rounded bg-zinc-900 px-1.5 py-1 font-mono text-xs text-emerald-400">
               {primaryFrame
                 ? `${primaryFrame.file}:${primaryFrame.line}`
-                : "the reported stack frame"}
+                : "an unknown location"}
             </code>
             .
           </p>
 
           <p className="mt-4 text-xs leading-6 text-zinc-600">
-            Detailed source-level diagnosis will be added when TraceLens gains
-            local codebase inspection.
+            The highlighted source line is the exact location extracted from
+            the stack trace.
           </p>
         </div>
 
@@ -376,30 +449,24 @@ function Diagnosis({
           </p>
 
           <div className="mt-5 space-y-4">
-            {parsedTrace?.frames.length ? (
-              parsedTrace.frames.map((frame, index) => (
-                <div
-                  key={`${frame.file}-${frame.line}-${index}`}
-                  className="flex gap-3"
-                >
-                  <span className="font-mono text-[10px] text-zinc-800">
-                    {String(index + 1).padStart(2, "0")}
-                  </span>
+            {parsedTrace?.frames.map((frame, index) => (
+              <div
+                key={`${frame.file}-${frame.line}-${index}`}
+                className="flex gap-3"
+              >
+                <span className="font-mono text-[10px] text-zinc-800">
+                  {String(index + 1).padStart(2, "0")}
+                </span>
 
-                  <span
-                    className={`font-mono text-[10px] ${
-                      index === 0 ? "text-red-400" : "text-zinc-600"
-                    }`}
-                  >
-                    {frame.file}:{frame.line}
-                  </span>
-                </div>
-              ))
-            ) : (
-              <span className="text-xs text-zinc-700">
-                No stack frames found.
-              </span>
-            )}
+                <span
+                  className={`font-mono text-[10px] ${
+                    index === 0 ? "text-red-400" : "text-zinc-600"
+                  }`}
+                >
+                  {frame.file}:{frame.line}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -408,7 +475,7 @@ function Diagnosis({
         onClick={onFix}
         className="mt-8 w-full rounded-lg bg-white px-4 py-3 text-xs font-medium text-black hover:bg-zinc-200"
       >
-        Generate suggested fix →
+        Continue to fix generation →
       </button>
     </InvestigationShell>
   );
@@ -424,29 +491,29 @@ function Fix({
   return (
     <InvestigationShell label="Suggested Fix" onBack={onBack}>
       <p className="font-mono text-[10px] text-zinc-700">
-        NEXT STEP
+        V0.5 SOURCE CONTEXT
       </p>
 
       <h1 className="mt-3 text-3xl font-semibold">
-        Source inspection comes next.
+        Source is now visible.
       </h1>
 
       <p className="mt-3 max-w-xl text-sm leading-6 text-zinc-600">
-        The trace location is real. TraceLens now needs access to the local
-        source file before it can safely explain or modify the code.
+        TraceLens has connected the stack trace to source code. The next
+        milestone is using this context to produce an evidence-backed fix.
       </p>
 
-      <div className="mt-8 rounded-xl border border-zinc-900 bg-[#030405] p-5">
-        <p className="font-mono text-[10px] text-zinc-700">
-          V0.5 TARGET
+      <div className="mt-8 rounded-xl border border-zinc-900 bg-zinc-950 p-5">
+        <p className="font-mono text-[9px] uppercase tracking-wider text-zinc-700">
+          Next engine
         </p>
 
         <div className="mt-5 space-y-3">
           {[
-            "Locate source file",
-            "Read surrounding code",
-            "Identify failing expression",
-            "Generate evidence-backed diagnosis",
+            "Read source context",
+            "Understand failing expression",
+            "Generate minimal fix",
+            "Verify behavior",
           ].map((step, index) => (
             <div key={step} className="flex items-center gap-3">
               <span className="font-mono text-[10px] text-zinc-800">
@@ -463,7 +530,7 @@ function Fix({
         onClick={onVerify}
         className="mt-8 w-full rounded-lg border border-zinc-800 px-4 py-3 text-xs text-zinc-400 hover:bg-zinc-900"
       >
-        Continue to verification demo →
+        Continue →
       </button>
     </InvestigationShell>
   );
@@ -479,46 +546,20 @@ function Verify({
   return (
     <InvestigationShell label="Verification" onBack={onBack}>
       <p className="font-mono text-[10px] text-zinc-700">
-        DEMO VERIFICATION
+        PROTOTYPE
       </p>
 
       <h1 className="mt-3 text-3xl font-semibold">
-        Verification flow.
+        Verification engine pending.
       </h1>
 
       <p className="mt-3 text-sm leading-6 text-zinc-600">
-        Real test execution is a V0.8 milestone. This screen remains a
-        prototype until then.
+        Real test execution will be added after fix generation.
       </p>
-
-      <div className="mt-10 overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950">
-        {[
-          "Failure condition identified",
-          "Expected behavior defined",
-          "Verification pending real test runner",
-        ].map((test, index) => (
-          <div
-            key={test}
-            className="flex items-center gap-3 border-b border-zinc-900 px-5 py-4 last:border-0"
-          >
-            <span
-              className={
-                index < 2 ? "text-emerald-400" : "text-amber-400"
-              }
-            >
-              {index < 2 ? "✓" : "•"}
-            </span>
-
-            <span className="font-mono text-[10px] text-zinc-500">
-              {test}
-            </span>
-          </div>
-        ))}
-      </div>
 
       <button
         onClick={onSuccess}
-        className="mt-8 w-full rounded-lg bg-emerald-400 px-4 py-3 text-xs font-medium text-black hover:bg-emerald-300"
+        className="mt-8 w-full rounded-lg border border-zinc-800 px-4 py-3 text-xs text-zinc-400 hover:bg-zinc-900"
       >
         Finish prototype flow →
       </button>
@@ -535,13 +576,13 @@ function Success({ onReset }: { onReset: () => void }) {
         </div>
 
         <p className="mt-8 font-mono text-[10px] uppercase tracking-[0.2em] text-emerald-400">
-          Prototype flow complete
+          Investigation complete
         </p>
 
         <h1 className="mt-4 text-4xl font-semibold tracking-tight sm:text-5xl">
           Failure traced.
           <br />
-          Next: real verification.
+          Source identified.
         </h1>
 
         <button

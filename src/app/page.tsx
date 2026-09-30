@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { parseTrace, type ParsedTrace } from "@/lib/trace-parser";
 import {
   diagnose,
@@ -14,6 +14,12 @@ import {
   verifyFix,
   type VerificationResult,
 } from "@/lib/verification";
+import {
+  createInvestigation,
+  getInvestigations,
+  saveInvestigation,
+  type Investigation,
+} from "@/lib/investigations";
 
 type Screen =
   | "dashboard"
@@ -22,30 +28,6 @@ type Screen =
   | "fix"
   | "verify"
   | "success";
-
-const investigations = [
-  {
-    file: "PaymentService.java",
-    line: "47",
-    status: "Resolved",
-    type: "NullPointerException",
-    time: "2m ago",
-  },
-  {
-    file: "AuthController.java",
-    line: "82",
-    status: "Open",
-    type: "AuthenticationError",
-    time: "18m ago",
-  },
-  {
-    file: "DatabaseClient.ts",
-    line: "116",
-    status: "Resolved",
-    type: "ConnectionError",
-    time: "1h ago",
-  },
-];
 
 export default function Home() {
   const [screen, setScreen] = useState<Screen>("dashboard");
@@ -59,6 +41,14 @@ export default function Home() {
     useState<FixSuggestion | null>(null);
   const [verification, setVerification] =
     useState<VerificationResult | null>(null);
+
+  const [investigations, setInvestigations] = useState<
+    Investigation[]
+  >([]);
+
+  useEffect(() => {
+    setInvestigations(getInvestigations());
+  }, []);
 
   function startAnalysis() {
     if (!trace.trim()) return;
@@ -75,7 +65,10 @@ export default function Home() {
         primaryFrame.line,
       );
 
-      const nextDiagnosis = diagnose(parsed.errorType, context);
+      const nextDiagnosis = diagnose(
+        parsed.errorType,
+        context,
+      );
 
       const nextFix = generateFix(
         parsed.errorType,
@@ -95,22 +88,57 @@ export default function Home() {
     setShowCapture(false);
     setScreen("analysis");
 
-    setTimeout(() => setScreen("diagnosis"), 1400);
+    setTimeout(() => {
+      setScreen("diagnosis");
+    }, 1400);
   }
 
   function runVerification() {
     const primaryFrame = parsedTrace?.frames[0];
 
-    if (!primaryFrame) return;
+    if (!primaryFrame || !parsedTrace) return;
 
     const result = verifyFix(
-      parsedTrace?.errorType ?? "",
+      parsedTrace.errorType,
       primaryFrame.file,
       primaryFrame.line,
     );
 
     setVerification(result);
     setScreen("verify");
+
+    if (result.status === "passed") {
+      const investigation = createInvestigation(
+        primaryFrame.file,
+        primaryFrame.line,
+        parsedTrace.errorType,
+        "Resolved",
+      );
+
+      const updated = saveInvestigation(investigation);
+
+      setInvestigations(updated);
+    }
+  }
+
+  function openInvestigation(
+    investigation: Investigation,
+  ) {
+    setTrace(
+      `${investigation.errorType}\n    at ${investigation.file}:${investigation.line}`,
+    );
+
+    setParsedTrace(null);
+    setSourceContext(null);
+    setDiagnosis(null);
+    setFixSuggestion(null);
+    setVerification(null);
+
+    setScreen("analysis");
+
+    setTimeout(() => {
+      setScreen("dashboard");
+    }, 0);
   }
 
   function reset() {
@@ -127,12 +155,16 @@ export default function Home() {
     <main className="min-h-screen bg-[#05070a] text-white">
       {screen === "dashboard" && (
         <Dashboard
+          investigations={investigations}
           onCapture={() => setShowCapture(true)}
           onPaste={() => setShowCapture(true)}
+          onOpen={openInvestigation}
         />
       )}
 
-      {screen === "analysis" && <Analysis trace={trace} />}
+      {screen === "analysis" && (
+        <Analysis trace={trace} />
+      )}
 
       {screen === "diagnosis" && (
         <Diagnosis
@@ -181,12 +213,20 @@ export default function Home() {
 }
 
 function Dashboard({
+  investigations,
   onCapture,
   onPaste,
+  onOpen,
 }: {
+  investigations: Investigation[];
   onCapture: () => void;
   onPaste: () => void;
+  onOpen: (investigation: Investigation) => void;
 }) {
+  const resolvedCount = investigations.filter(
+    (item) => item.status === "Resolved",
+  ).length;
+
   return (
     <div className="mx-auto min-h-screen max-w-6xl px-4 py-4 sm:px-8 sm:py-8">
       <Header />
@@ -207,12 +247,14 @@ function Dashboard({
         <h1 className="mt-5 text-4xl font-semibold leading-[1.05] tracking-tight sm:text-6xl">
           Understand failures.
           <br />
-          <span className="text-zinc-600">Fix faster.</span>
+          <span className="text-zinc-600">
+            Fix faster.
+          </span>
         </h1>
 
         <p className="mt-6 max-w-xl text-sm leading-7 text-zinc-500 sm:text-base">
-          Capture a failure. Trace it to the source. Understand the cause.
-          Verify the fix.
+          Capture a failure. Trace it to the source.
+          Understand the cause. Verify the fix.
         </p>
 
         <div className="mt-8 flex flex-col gap-2 sm:flex-row">
@@ -233,9 +275,20 @@ function Dashboard({
       </section>
 
       <section className="grid grid-cols-3 gap-2 sm:gap-3">
-        <Stat label="Investigations" value="03" />
-        <Stat label="Resolved" value="02" />
-        <Stat label="Verified" value="02" />
+        <Stat
+          label="Investigations"
+          value={String(investigations.length).padStart(2, "0")}
+        />
+
+        <Stat
+          label="Resolved"
+          value={String(resolvedCount).padStart(2, "0")}
+        />
+
+        <Stat
+          label="Verified"
+          value={String(resolvedCount).padStart(2, "0")}
+        />
       </section>
 
       <section className="mt-12">
@@ -244,62 +297,63 @@ function Dashboard({
         </p>
 
         <p className="mt-1 text-xs text-zinc-600">
-          Latest failures traced by TraceLens
+          Stored locally in this browser
         </p>
 
         <div className="mt-4 overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950">
-          {investigations.map((item, index) => (
-            <div
-              key={item.file}
-              className={`px-4 py-4 sm:px-5 ${
-                index !== investigations.length - 1
-                  ? "border-b border-zinc-900"
-                  : ""
-              }`}
-            >
-              <div className="flex items-start gap-3">
-                <div
-                  className={`mt-1.5 h-1.5 w-1.5 rounded-full ${
-                    item.status === "Resolved"
-                      ? "bg-emerald-400"
-                      : "bg-amber-400"
-                  }`}
-                />
+          {investigations.length === 0 ? (
+            <div className="px-5 py-12 text-center">
+              <p className="text-sm text-zinc-600">
+                No investigations yet.
+              </p>
 
-                <div className="min-w-0 flex-1">
-                  <div className="flex gap-3">
-                    <span className="truncate font-mono text-xs text-zinc-300">
-                      {item.file}
-                    </span>
-
-                    <span className="font-mono text-[10px] text-zinc-700">
-                      :{item.line}
-                    </span>
-                  </div>
-
-                  <div className="mt-1 flex gap-3">
-                    <span className="text-[10px] text-zinc-600">
-                      {item.type}
-                    </span>
-
-                    <span className="text-[10px] text-zinc-800">
-                      {item.time}
-                    </span>
-                  </div>
-                </div>
-
-                <span
-                  className={`shrink-0 rounded-full px-2 py-1 text-[9px] ${
-                    item.status === "Resolved"
-                      ? "bg-emerald-400/10 text-emerald-400"
-                      : "bg-amber-400/10 text-amber-400"
-                  }`}
-                >
-                  {item.status}
-                </span>
-              </div>
+              <p className="mt-2 text-xs text-zinc-800">
+                Capture your first failure to begin.
+              </p>
             </div>
-          ))}
+          ) : (
+            investigations.map((item, index) => (
+              <button
+                key={item.id}
+                onClick={() => onOpen(item)}
+                className={`block w-full px-4 py-4 text-left transition hover:bg-zinc-900/50 sm:px-5 ${
+                  index !== investigations.length - 1
+                    ? "border-b border-zinc-900"
+                    : ""
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex gap-3">
+                      <span className="truncate font-mono text-xs text-zinc-300">
+                        {item.file}
+                      </span>
+
+                      <span className="font-mono text-[10px] text-zinc-700">
+                        :{item.line}
+                      </span>
+                    </div>
+
+                    <div className="mt-1 flex gap-3">
+                      <span className="text-[10px] text-zinc-600">
+                        {item.errorType}
+                      </span>
+
+                      <span className="text-[10px] text-zinc-800">
+                        {formatTime(item.createdAt)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <span className="shrink-0 rounded-full bg-emerald-400/10 px-2 py-1 font-mono text-[9px] text-emerald-400">
+                    {item.status}
+                  </span>
+                </div>
+              </button>
+            ))
+          )}
         </div>
       </section>
 
@@ -309,22 +363,26 @@ function Dashboard({
         </p>
 
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-          {["Capture", "Analyze", "Trace", "Fix", "Verify"].map(
-            (step, index) => (
-              <div
-                key={step}
-                className="rounded-lg border border-zinc-900 bg-zinc-950 p-4"
-              >
-                <span className="font-mono text-[10px] text-zinc-700">
-                  0{index + 1}
-                </span>
+          {[
+            "Capture",
+            "Analyze",
+            "Trace",
+            "Fix",
+            "Verify",
+          ].map((step, index) => (
+            <div
+              key={step}
+              className="rounded-lg border border-zinc-900 bg-zinc-950 p-4"
+            >
+              <span className="font-mono text-[10px] text-zinc-700">
+                0{index + 1}
+              </span>
 
-                <p className="mt-6 text-xs text-zinc-400">
-                  {step}
-                </p>
-              </div>
-            ),
-          )}
+              <p className="mt-6 text-xs text-zinc-400">
+                {step}
+              </p>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -401,7 +459,10 @@ function Diagnosis({
   const primaryFrame = parsedTrace?.frames[0];
 
   return (
-    <InvestigationShell label="Diagnosis" onBack={onBack}>
+    <InvestigationShell
+      label="Diagnosis"
+      onBack={onBack}
+    >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="font-mono text-[10px] text-zinc-700">
@@ -410,7 +471,8 @@ function Diagnosis({
           </p>
 
           <h1 className="mt-3 text-3xl font-semibold">
-            {parsedTrace?.errorType ?? "UnknownError"}
+            {parsedTrace?.errorType ??
+              "UnknownError"}
           </h1>
 
           <p className="mt-2 font-mono text-[10px] text-red-400">
@@ -436,7 +498,8 @@ function Diagnosis({
       <div className="mt-10 overflow-hidden rounded-xl border border-zinc-900 bg-[#030405]">
         <div className="flex items-center justify-between border-b border-zinc-900 px-4 py-3">
           <span className="font-mono text-[10px] text-zinc-500">
-            {sourceContext?.file ?? "Source unavailable"}
+            {sourceContext?.file ??
+              "Source unavailable"}
           </span>
 
           {sourceContext && (
@@ -449,40 +512,42 @@ function Diagnosis({
 
         {sourceContext ? (
           <div className="overflow-x-auto py-3">
-            {sourceContext.lines.map((sourceLine) => (
-              <div
-                key={sourceLine.number}
-                className={`flex min-w-max px-4 py-1 ${
-                  sourceLine.isTarget
-                    ? "bg-red-400/10"
-                    : ""
-                }`}
-              >
-                <span
-                  className={`w-10 shrink-0 text-right font-mono text-[10px] ${
+            {sourceContext.lines.map(
+              (sourceLine) => (
+                <div
+                  key={sourceLine.number}
+                  className={`flex min-w-max px-4 py-1 ${
                     sourceLine.isTarget
-                      ? "text-red-400"
-                      : "text-zinc-800"
+                      ? "bg-red-400/10"
+                      : ""
                   }`}
                 >
-                  {sourceLine.number}
-                </span>
+                  <span
+                    className={`w-10 shrink-0 text-right font-mono text-[10px] ${
+                      sourceLine.isTarget
+                        ? "text-red-400"
+                        : "text-zinc-800"
+                    }`}
+                  >
+                    {sourceLine.number}
+                  </span>
 
-                <span className="mx-4 font-mono text-[10px] text-zinc-800">
-                  |
-                </span>
+                  <span className="mx-4 font-mono text-[10px] text-zinc-800">
+                    |
+                  </span>
 
-                <code
-                  className={`font-mono text-[10px] ${
-                    sourceLine.isTarget
-                      ? "text-red-300"
-                      : "text-zinc-500"
-                  }`}
-                >
-                  {sourceLine.code}
-                </code>
-              </div>
-            ))}
+                  <code
+                    className={`font-mono text-[10px] ${
+                      sourceLine.isTarget
+                        ? "text-red-300"
+                        : "text-zinc-500"
+                    }`}
+                  >
+                    {sourceLine.code}
+                  </code>
+                </div>
+              ),
+            )}
           </div>
         ) : (
           <div className="p-5 text-xs text-zinc-700">
@@ -534,26 +599,31 @@ function Diagnosis({
 
           <div className="mt-5 space-y-4">
             {parsedTrace?.frames.length ? (
-              parsedTrace.frames.map((frame, index) => (
-                <div
-                  key={`${frame.file}-${frame.line}-${index}`}
-                  className="flex gap-3"
-                >
-                  <span className="font-mono text-[10px] text-zinc-800">
-                    {String(index + 1).padStart(2, "0")}
-                  </span>
-
-                  <span
-                    className={`font-mono text-[10px] ${
-                      index === 0
-                        ? "text-red-400"
-                        : "text-zinc-600"
-                    }`}
+              parsedTrace.frames.map(
+                (frame, index) => (
+                  <div
+                    key={`${frame.file}-${frame.line}-${index}`}
+                    className="flex gap-3"
                   >
-                    {frame.file}:{frame.line}
-                  </span>
-                </div>
-              ))
+                    <span className="font-mono text-[10px] text-zinc-800">
+                      {String(index + 1).padStart(
+                        2,
+                        "0",
+                      )}
+                    </span>
+
+                    <span
+                      className={`font-mono text-[10px] ${
+                        index === 0
+                          ? "text-red-400"
+                          : "text-zinc-600"
+                      }`}
+                    >
+                      {frame.file}:{frame.line}
+                    </span>
+                  </div>
+                ),
+              )
             ) : (
               <span className="text-xs text-zinc-700">
                 No stack frames found.
@@ -736,7 +806,8 @@ function Verify({
                 : "bg-red-400/10 text-red-400"
             }`}
           >
-            {verification.passed} / {verification.total} passed
+            {verification.passed} /{" "}
+            {verification.total} passed
           </div>
         )}
       </div>
@@ -749,32 +820,34 @@ function Verify({
         </div>
 
         <div className="divide-y divide-zinc-900">
-          {verification?.checks.map((check) => (
-            <div
-              key={check.name}
-              className="flex gap-4 px-5 py-5"
-            >
-              <span
-                className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-mono text-[10px] ${
-                  check.passed
-                    ? "bg-emerald-400/10 text-emerald-400"
-                    : "bg-red-400/10 text-red-400"
-                }`}
+          {verification?.checks.map(
+            (check) => (
+              <div
+                key={check.name}
+                className="flex gap-4 px-5 py-5"
               >
-                {check.passed ? "✓" : "×"}
-              </span>
+                <span
+                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-mono text-[10px] ${
+                    check.passed
+                      ? "bg-emerald-400/10 text-emerald-400"
+                      : "bg-red-400/10 text-red-400"
+                  }`}
+                >
+                  {check.passed ? "✓" : "×"}
+                </span>
 
-              <div>
-                <p className="text-sm text-zinc-300">
-                  {check.name}
-                </p>
+                <div>
+                  <p className="text-sm text-zinc-300">
+                    {check.name}
+                  </p>
 
-                <p className="mt-1 text-xs leading-6 text-zinc-600">
-                  {check.detail}
-                </p>
+                  <p className="mt-1 text-xs leading-6 text-zinc-600">
+                    {check.detail}
+                  </p>
+                </div>
               </div>
-            </div>
-          ))}
+            ),
+          )}
         </div>
       </div>
 
@@ -818,7 +891,8 @@ function Success({
 
         {verification && (
           <p className="mt-5 font-mono text-xs text-zinc-600">
-            {verification.passed} / {verification.total} verification checks passed
+            {verification.passed} /{" "}
+            {verification.total} verification checks passed
           </p>
         )}
 
@@ -968,4 +1042,19 @@ function Footer() {
       TRACELENS / FAILURE → CAUSE → FIX → VERIFY
     </footer>
   );
+}
+
+function formatTime(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "unknown";
+  }
+
+  return date.toLocaleString([], {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }

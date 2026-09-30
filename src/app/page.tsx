@@ -10,6 +10,10 @@ import {
   type FixSuggestion,
   type SourceContext,
 } from "@/lib/source-inspector";
+import {
+  verifyFix,
+  type VerificationResult,
+} from "@/lib/verification";
 
 type Screen =
   | "dashboard"
@@ -48,12 +52,13 @@ export default function Home() {
   const [showCapture, setShowCapture] = useState(false);
   const [trace, setTrace] = useState("");
   const [parsedTrace, setParsedTrace] = useState<ParsedTrace | null>(null);
-  const [sourceContext, setSourceContext] = useState<SourceContext | null>(
-    null,
-  );
+  const [sourceContext, setSourceContext] =
+    useState<SourceContext | null>(null);
   const [diagnosis, setDiagnosis] = useState<Diagnosis | null>(null);
   const [fixSuggestion, setFixSuggestion] =
     useState<FixSuggestion | null>(null);
+  const [verification, setVerification] =
+    useState<VerificationResult | null>(null);
 
   function startAnalysis() {
     if (!trace.trim()) return;
@@ -62,6 +67,7 @@ export default function Home() {
     const primaryFrame = parsed.frames[0];
 
     setParsedTrace(parsed);
+    setVerification(null);
 
     if (primaryFrame) {
       const context = inspectSource(
@@ -70,6 +76,7 @@ export default function Home() {
       );
 
       const nextDiagnosis = diagnose(parsed.errorType, context);
+
       const nextFix = generateFix(
         parsed.errorType,
         context,
@@ -91,12 +98,28 @@ export default function Home() {
     setTimeout(() => setScreen("diagnosis"), 1400);
   }
 
+  function runVerification() {
+    const primaryFrame = parsedTrace?.frames[0];
+
+    if (!primaryFrame) return;
+
+    const result = verifyFix(
+      parsedTrace?.errorType ?? "",
+      primaryFrame.file,
+      primaryFrame.line,
+    );
+
+    setVerification(result);
+    setScreen("verify");
+  }
+
   function reset() {
     setTrace("");
     setParsedTrace(null);
     setSourceContext(null);
     setDiagnosis(null);
     setFixSuggestion(null);
+    setVerification(null);
     setScreen("dashboard");
   }
 
@@ -125,19 +148,25 @@ export default function Home() {
         <Fix
           diagnosis={diagnosis}
           fixSuggestion={fixSuggestion}
-          onVerify={() => setScreen("verify")}
+          onVerify={runVerification}
           onBack={() => setScreen("diagnosis")}
         />
       )}
 
       {screen === "verify" && (
         <Verify
+          verification={verification}
           onSuccess={() => setScreen("success")}
           onBack={() => setScreen("fix")}
         />
       )}
 
-      {screen === "success" && <Success onReset={reset} />}
+      {screen === "success" && (
+        <Success
+          verification={verification}
+          onReset={reset}
+        />
+      )}
 
       {showCapture && (
         <CaptureModal
@@ -290,7 +319,9 @@ function Dashboard({
                   0{index + 1}
                 </span>
 
-                <p className="mt-6 text-xs text-zinc-400">{step}</p>
+                <p className="mt-6 text-xs text-zinc-400">
+                  {step}
+                </p>
               </div>
             ),
           )}
@@ -334,7 +365,9 @@ function Analysis({ trace }: { trace: string }) {
               {index < 3 ? "✓" : "•"}
             </span>
 
-            <span className="text-xs text-zinc-400">{step}</span>
+            <span className="text-xs text-zinc-400">
+              {step}
+            </span>
           </div>
         ))}
       </div>
@@ -372,7 +405,8 @@ function Diagnosis({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="font-mono text-[10px] text-zinc-700">
-            {primaryFrame?.className?.toUpperCase() ?? "UNKNOWN SOURCE"}
+            {primaryFrame?.className?.toUpperCase() ??
+              "UNKNOWN SOURCE"}
           </p>
 
           <h1 className="mt-3 text-3xl font-semibold">
@@ -393,7 +427,9 @@ function Diagnosis({
         </div>
 
         <span className="w-fit rounded-full bg-emerald-400/10 px-3 py-1.5 font-mono text-[10px] text-emerald-400">
-          {sourceContext ? "Source mapped" : "Source unavailable"}
+          {sourceContext
+            ? "Source mapped"
+            : "Source unavailable"}
         </span>
       </div>
 
@@ -405,7 +441,8 @@ function Diagnosis({
 
           {sourceContext && (
             <span className="font-mono text-[9px] text-zinc-700">
-              lines {sourceContext.startLine}-{sourceContext.endLine}
+              lines {sourceContext.startLine}-
+              {sourceContext.endLine}
             </span>
           )}
         </div>
@@ -416,7 +453,9 @@ function Diagnosis({
               <div
                 key={sourceLine.number}
                 className={`flex min-w-max px-4 py-1 ${
-                  sourceLine.isTarget ? "bg-red-400/10" : ""
+                  sourceLine.isTarget
+                    ? "bg-red-400/10"
+                    : ""
                 }`}
               >
                 <span
@@ -467,7 +506,8 @@ function Diagnosis({
           </div>
 
           <h2 className="mt-4 text-lg font-medium text-zinc-200">
-            {diagnosis?.title ?? "Diagnosis unavailable"}
+            {diagnosis?.title ??
+              "Diagnosis unavailable"}
           </h2>
 
           <p className="mt-4 text-sm leading-7 text-zinc-400">
@@ -481,7 +521,8 @@ function Diagnosis({
             </p>
 
             <code className="font-mono text-[10px] leading-6 text-emerald-400">
-              {diagnosis?.evidence ?? "No evidence available"}
+              {diagnosis?.evidence ??
+                "No evidence available"}
             </code>
           </div>
         </div>
@@ -504,7 +545,9 @@ function Diagnosis({
 
                   <span
                     className={`font-mono text-[10px] ${
-                      index === 0 ? "text-red-400" : "text-zinc-600"
+                      index === 0
+                        ? "text-red-400"
+                        : "text-zinc-600"
                     }`}
                   >
                     {frame.file}:{frame.line}
@@ -542,7 +585,10 @@ function Fix({
   onBack: () => void;
 }) {
   return (
-    <InvestigationShell label="Suggested Fix" onBack={onBack}>
+    <InvestigationShell
+      label="Suggested Fix"
+      onBack={onBack}
+    >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="font-mono text-[10px] uppercase tracking-wider text-emerald-400">
@@ -567,11 +613,13 @@ function Fix({
         </p>
 
         <h2 className="mt-3 text-lg font-medium text-zinc-200">
-          {diagnosis?.title ?? "Diagnosis unavailable"}
+          {diagnosis?.title ??
+            "Diagnosis unavailable"}
         </h2>
 
         <p className="mt-3 text-sm leading-7 text-zinc-500">
-          {diagnosis?.cause ?? "No diagnosis available."}
+          {diagnosis?.cause ??
+            "No diagnosis available."}
         </p>
       </div>
 
@@ -607,9 +655,10 @@ function Fix({
 
       <button
         onClick={onVerify}
-        className="mt-8 w-full rounded-lg bg-white px-4 py-3 text-xs font-medium text-black hover:bg-zinc-200"
+        disabled={!fixSuggestion}
+        className="mt-8 w-full rounded-lg bg-white px-4 py-3 text-xs font-medium text-black hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-30"
       >
-        Continue to verification →
+        Run verification →
       </button>
     </InvestigationShell>
   );
@@ -638,37 +687,116 @@ function CodePanel({
 }
 
 function Verify({
+  verification,
   onSuccess,
   onBack,
 }: {
+  verification: VerificationResult | null;
   onSuccess: () => void;
   onBack: () => void;
 }) {
+  const passed =
+    verification?.status === "passed";
+
   return (
-    <InvestigationShell label="Verification" onBack={onBack}>
-      <p className="font-mono text-[10px] text-zinc-700">
-        V0.8 NEXT
-      </p>
-
-      <h1 className="mt-3 text-3xl font-semibold">
-        Verification engine pending.
-      </h1>
-
-      <p className="mt-3 text-sm leading-6 text-zinc-600">
-        The patch is ready. Real test generation and execution arrive in V0.8.
-      </p>
-
-      <button
-        onClick={onSuccess}
-        className="mt-8 w-full rounded-lg border border-zinc-800 px-4 py-3 text-xs text-zinc-400 hover:bg-zinc-900"
+    <InvestigationShell
+      label="Verification"
+      onBack={onBack}
+    >
+      <p
+        className={`font-mono text-[10px] uppercase tracking-wider ${
+          passed
+            ? "text-emerald-400"
+            : "text-amber-400"
+        }`}
       >
-        Finish prototype flow →
-      </button>
+        Verification engine
+      </p>
+
+      <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-3xl font-semibold sm:text-4xl">
+            {passed
+              ? "Fix verified."
+              : "Verification failed."}
+          </h1>
+
+          <p className="mt-3 text-sm leading-6 text-zinc-600">
+            {passed
+              ? "The generated patch passed every available verification check."
+              : "The generated patch could not be verified by the current engine."}
+          </p>
+        </div>
+
+        {verification && (
+          <div
+            className={`w-fit rounded-full px-3 py-2 font-mono text-[10px] ${
+              passed
+                ? "bg-emerald-400/10 text-emerald-400"
+                : "bg-red-400/10 text-red-400"
+            }`}
+          >
+            {verification.passed} / {verification.total} passed
+          </div>
+        )}
+      </div>
+
+      <div className="mt-10 rounded-xl border border-zinc-900 bg-zinc-950">
+        <div className="border-b border-zinc-900 px-5 py-4">
+          <p className="font-mono text-[9px] uppercase tracking-wider text-zinc-700">
+            Generated verification
+          </p>
+        </div>
+
+        <div className="divide-y divide-zinc-900">
+          {verification?.checks.map((check) => (
+            <div
+              key={check.name}
+              className="flex gap-4 px-5 py-5"
+            >
+              <span
+                className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-mono text-[10px] ${
+                  check.passed
+                    ? "bg-emerald-400/10 text-emerald-400"
+                    : "bg-red-400/10 text-red-400"
+                }`}
+              >
+                {check.passed ? "✓" : "×"}
+              </span>
+
+              <div>
+                <p className="text-sm text-zinc-300">
+                  {check.name}
+                </p>
+
+                <p className="mt-1 text-xs leading-6 text-zinc-600">
+                  {check.detail}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {passed && (
+        <button
+          onClick={onSuccess}
+          className="mt-8 w-full rounded-lg bg-white px-4 py-3 text-xs font-medium text-black hover:bg-zinc-200"
+        >
+          Complete investigation →
+        </button>
+      )}
     </InvestigationShell>
   );
 }
 
-function Success({ onReset }: { onReset: () => void }) {
+function Success({
+  verification,
+  onReset,
+}: {
+  verification: VerificationResult | null;
+  onReset: () => void;
+}) {
   return (
     <div className="flex min-h-screen items-center justify-center px-5">
       <div className="w-full max-w-xl text-center">
@@ -677,7 +805,7 @@ function Success({ onReset }: { onReset: () => void }) {
         </div>
 
         <p className="mt-8 font-mono text-[10px] uppercase tracking-[0.2em] text-emerald-400">
-          Investigation complete
+          Investigation verified
         </p>
 
         <h1 className="mt-4 text-4xl font-semibold tracking-tight sm:text-5xl">
@@ -685,8 +813,14 @@ function Success({ onReset }: { onReset: () => void }) {
           <br />
           Cause identified.
           <br />
-          Fix generated.
+          Fix verified.
         </h1>
+
+        {verification && (
+          <p className="mt-5 font-mono text-xs text-zinc-600">
+            {verification.passed} / {verification.total} verification checks passed
+          </p>
+        )}
 
         <button
           onClick={onReset}
@@ -734,7 +868,9 @@ function CaptureModal({
 
         <textarea
           value={trace}
-          onChange={(event) => setTrace(event.target.value)}
+          onChange={(event) =>
+            setTrace(event.target.value)
+          }
           placeholder="Paste stack trace..."
           className="mt-6 h-40 w-full resize-none rounded-lg border border-zinc-900 bg-black p-4 font-mono text-[10px] leading-6 text-zinc-300 outline-none placeholder:text-zinc-800 focus:border-zinc-700"
         />
@@ -778,7 +914,9 @@ function Stat({
 }) {
   return (
     <div className="rounded-lg border border-zinc-900 bg-zinc-950 p-4">
-      <p className="font-mono text-lg text-zinc-200">{value}</p>
+      <p className="font-mono text-lg text-zinc-200">
+        {value}
+      </p>
 
       <p className="mt-1 text-[9px] uppercase tracking-wider text-zinc-700">
         {label}
@@ -817,7 +955,9 @@ function InvestigationShell({
         </span>
       </div>
 
-      <section className="py-10 sm:py-14">{children}</section>
+      <section className="py-10 sm:py-14">
+        {children}
+      </section>
     </div>
   );
 }

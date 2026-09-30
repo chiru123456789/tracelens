@@ -4,8 +4,10 @@ import { useState } from "react";
 import { parseTrace, type ParsedTrace } from "@/lib/trace-parser";
 import {
   diagnose,
+  generateFix,
   inspectSource,
   type Diagnosis,
+  type FixSuggestion,
   type SourceContext,
 } from "@/lib/source-inspector";
 
@@ -50,6 +52,8 @@ export default function Home() {
     null,
   );
   const [diagnosis, setDiagnosis] = useState<Diagnosis | null>(null);
+  const [fixSuggestion, setFixSuggestion] =
+    useState<FixSuggestion | null>(null);
 
   function startAnalysis() {
     if (!trace.trim()) return;
@@ -65,11 +69,20 @@ export default function Home() {
         primaryFrame.line,
       );
 
+      const nextDiagnosis = diagnose(parsed.errorType, context);
+      const nextFix = generateFix(
+        parsed.errorType,
+        context,
+        nextDiagnosis,
+      );
+
       setSourceContext(context);
-      setDiagnosis(diagnose(parsed.errorType, context));
+      setDiagnosis(nextDiagnosis);
+      setFixSuggestion(nextFix);
     } else {
       setSourceContext(null);
       setDiagnosis(null);
+      setFixSuggestion(null);
     }
 
     setShowCapture(false);
@@ -83,6 +96,7 @@ export default function Home() {
     setParsedTrace(null);
     setSourceContext(null);
     setDiagnosis(null);
+    setFixSuggestion(null);
     setScreen("dashboard");
   }
 
@@ -109,6 +123,8 @@ export default function Home() {
 
       {screen === "fix" && (
         <Fix
+          diagnosis={diagnosis}
+          fixSuggestion={fixSuggestion}
           onVerify={() => setScreen("verify")}
           onBack={() => setScreen("diagnosis")}
         />
@@ -381,7 +397,7 @@ function Diagnosis({
         </span>
       </div>
 
-      <div className="mt-10 rounded-xl border border-zinc-900 bg-[#030405] overflow-hidden">
+      <div className="mt-10 overflow-hidden rounded-xl border border-zinc-900 bg-[#030405]">
         <div className="flex items-center justify-between border-b border-zinc-900 px-4 py-3">
           <span className="font-mono text-[10px] text-zinc-500">
             {sourceContext?.file ?? "Source unavailable"}
@@ -444,15 +460,7 @@ function Diagnosis({
             </p>
 
             {diagnosis && (
-              <span
-                className={`rounded-full px-2 py-1 font-mono text-[9px] ${
-                  diagnosis.confidence === "high"
-                    ? "bg-emerald-400/10 text-emerald-400"
-                    : diagnosis.confidence === "medium"
-                      ? "bg-amber-400/10 text-amber-400"
-                      : "bg-zinc-900 text-zinc-600"
-                }`}
-              >
+              <span className="rounded-full bg-emerald-400/10 px-2 py-1 font-mono text-[9px] text-emerald-400">
                 {diagnosis.confidence} confidence
               </span>
             )}
@@ -516,51 +524,116 @@ function Diagnosis({
         onClick={onFix}
         className="mt-8 w-full rounded-lg bg-white px-4 py-3 text-xs font-medium text-black hover:bg-zinc-200"
       >
-        Continue to fix generation →
+        Generate minimal fix →
       </button>
     </InvestigationShell>
   );
 }
 
 function Fix({
+  diagnosis,
+  fixSuggestion,
   onVerify,
   onBack,
 }: {
+  diagnosis: Diagnosis | null;
+  fixSuggestion: FixSuggestion | null;
   onVerify: () => void;
   onBack: () => void;
 }) {
   return (
     <InvestigationShell label="Suggested Fix" onBack={onBack}>
-      <p className="font-mono text-[10px] text-zinc-700">
-        NEXT ENGINE
-      </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-wider text-emerald-400">
+            Fix engine
+          </p>
 
-      <h1 className="mt-3 text-3xl font-semibold">
-        Generate a minimal fix.
-      </h1>
+          <h1 className="mt-3 text-3xl font-semibold sm:text-4xl">
+            Minimal patch generated.
+          </h1>
+        </div>
 
-      <p className="mt-3 max-w-xl text-sm leading-6 text-zinc-600">
-        TraceLens has evidence for the failure. The next milestone is turning
-        that evidence into a concrete code change.
-      </p>
+        {fixSuggestion && (
+          <span className="w-fit rounded-full bg-emerald-400/10 px-3 py-1.5 font-mono text-[10px] text-emerald-400">
+            {fixSuggestion.confidence} confidence
+          </span>
+        )}
+      </div>
 
-      <div className="mt-8 rounded-xl border border-zinc-900 bg-black p-5">
+      <div className="mt-8 rounded-xl border border-zinc-900 bg-zinc-950 p-5">
         <p className="font-mono text-[9px] uppercase tracking-wider text-zinc-700">
-          V0.7
+          Diagnosis
         </p>
 
-        <p className="mt-4 font-mono text-xs text-zinc-500">
-          diagnosis → minimal patch → verification test
+        <h2 className="mt-3 text-lg font-medium text-zinc-200">
+          {diagnosis?.title ?? "Diagnosis unavailable"}
+        </h2>
+
+        <p className="mt-3 text-sm leading-7 text-zinc-500">
+          {diagnosis?.cause ?? "No diagnosis available."}
         </p>
       </div>
 
+      {fixSuggestion && (
+        <>
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            <CodePanel
+              label="BEFORE"
+              code={fixSuggestion.before}
+            />
+
+            <CodePanel
+              label="AFTER"
+              code={fixSuggestion.after}
+            />
+          </div>
+
+          <div className="mt-4 rounded-xl border border-zinc-900 bg-zinc-950 p-5">
+            <p className="font-mono text-[9px] uppercase tracking-wider text-zinc-700">
+              Patch reasoning
+            </p>
+
+            <h2 className="mt-3 text-lg font-medium text-zinc-200">
+              {fixSuggestion.title}
+            </h2>
+
+            <p className="mt-3 text-sm leading-7 text-zinc-500">
+              {fixSuggestion.explanation}
+            </p>
+          </div>
+        </>
+      )}
+
       <button
         onClick={onVerify}
-        className="mt-8 w-full rounded-lg border border-zinc-800 px-4 py-3 text-xs text-zinc-400 hover:bg-zinc-900"
+        className="mt-8 w-full rounded-lg bg-white px-4 py-3 text-xs font-medium text-black hover:bg-zinc-200"
       >
-        Continue →
+        Continue to verification →
       </button>
     </InvestigationShell>
+  );
+}
+
+function CodePanel({
+  label,
+  code,
+}: {
+  label: string;
+  code: string;
+}) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-zinc-900 bg-black">
+      <div className="border-b border-zinc-900 px-4 py-3">
+        <span className="font-mono text-[9px] tracking-wider text-zinc-700">
+          {label}
+        </span>
+      </div>
+
+      <pre className="overflow-x-auto p-5 font-mono text-[10px] leading-6 text-zinc-400">
+        {code}
+      </pre>
+    </div>
   );
 }
 
@@ -574,7 +647,7 @@ function Verify({
   return (
     <InvestigationShell label="Verification" onBack={onBack}>
       <p className="font-mono text-[10px] text-zinc-700">
-        PROTOTYPE
+        V0.8 NEXT
       </p>
 
       <h1 className="mt-3 text-3xl font-semibold">
@@ -582,7 +655,7 @@ function Verify({
       </h1>
 
       <p className="mt-3 text-sm leading-6 text-zinc-600">
-        Real test execution will arrive after fix generation.
+        The patch is ready. Real test generation and execution arrive in V0.8.
       </p>
 
       <button
@@ -611,6 +684,8 @@ function Success({ onReset }: { onReset: () => void }) {
           Failure traced.
           <br />
           Cause identified.
+          <br />
+          Fix generated.
         </h1>
 
         <button

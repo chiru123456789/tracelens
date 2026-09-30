@@ -17,6 +17,14 @@ export type Diagnosis = {
   confidence: "high" | "medium" | "low";
 };
 
+export type FixSuggestion = {
+  title: string;
+  explanation: string;
+  before: string;
+  after: string;
+  confidence: "high" | "medium" | "low";
+};
+
 const DEMO_SOURCES: Record<string, string> = {
   "PaymentService.java": `package com.example;
 
@@ -75,6 +83,8 @@ export function inspectSource(
   if (!source) return null;
 
   const sourceLines = source.split("\n");
+
+  if (line < 1 || line > sourceLines.length) return null;
 
   const startLine = Math.max(1, line - contextLines);
   const endLine = Math.min(sourceLines.length, line + contextLines);
@@ -151,6 +161,63 @@ export function diagnose(
     cause:
       "TraceLens located the failing source line, but the current deterministic rules do not have enough evidence to classify the root cause.",
     evidence: `${source.file}:${source.line} → ${code || "source line unavailable"}`,
+    confidence: "low",
+  };
+}
+
+export function generateFix(
+  errorType: string,
+  source: SourceContext | null,
+  diagnosis: Diagnosis | null,
+): FixSuggestion | null {
+  if (!source || !diagnosis) return null;
+
+  const target = source.lines.find((line) => line.isTarget);
+  const code = target?.code.trim() ?? "";
+
+  if (
+    errorType === "NullPointerException" &&
+    code === "PaymentMethod method = customer.getPaymentMethod();"
+  ) {
+    return {
+      title: "Guard customer before access",
+      explanation:
+        "The failing expression dereferences customer. Add an explicit null check before calling getPaymentMethod(), so invalid input fails with a controlled exception instead of a NullPointerException.",
+      before: `PaymentMethod method = customer.getPaymentMethod();`,
+      after: `if (customer == null) {
+    throw new IllegalArgumentException("customer cannot be null");
+}
+
+PaymentMethod method = customer.getPaymentMethod();`,
+      confidence: "high",
+    };
+  }
+
+  if (
+    errorType === "NullPointerException" &&
+    /^(customer|request|user|order)\./.test(code)
+  ) {
+    const objectName = code.split(".")[0];
+
+    return {
+      title: `Guard ${objectName} before access`,
+      explanation: `The failing line dereferences ${objectName}. Add a null check before the access so the failure is handled explicitly.`,
+      before: target?.code.trim() ?? code,
+      after: `if (${objectName} == null) {
+    throw new IllegalArgumentException("${objectName} cannot be null");
+}
+
+${target?.code.trim() ?? code}`,
+      confidence: "medium",
+    };
+  }
+
+  return {
+    title: "No automatic patch available",
+    explanation:
+      "TraceLens has identified the failure evidence, but the current deterministic fix engine does not have enough information to safely generate a code change.",
+    before: code || "Source line unavailable",
+    after: "Manual investigation required.",
     confidence: "low",
   };
 }

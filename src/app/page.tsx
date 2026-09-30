@@ -29,6 +29,10 @@ type Screen =
   | "verify"
   | "success";
 
+const DEMO_TRACE = `java.lang.NullPointerException
+    at com.example.PaymentService.processPayment(PaymentService.java:6)
+    at com.example.PaymentController.pay(PaymentController.java:23)`;
+
 export default function Home() {
   const [screen, setScreen] = useState<Screen>("dashboard");
   const [showCapture, setShowCapture] = useState(false);
@@ -41,21 +45,20 @@ export default function Home() {
     useState<FixSuggestion | null>(null);
   const [verification, setVerification] =
     useState<VerificationResult | null>(null);
-
-  const [investigations, setInvestigations] = useState<
-    Investigation[]
-  >([]);
+  const [investigations, setInvestigations] =
+    useState<Investigation[]>([]);
 
   useEffect(() => {
     setInvestigations(getInvestigations());
   }, []);
 
-  function startAnalysis() {
-    if (!trace.trim()) return;
+  function analyze(value: string) {
+    if (!value.trim()) return;
 
-    const parsed = parseTrace(trace);
+    const parsed = parseTrace(value);
     const primaryFrame = parsed.frames[0];
 
+    setTrace(value);
     setParsedTrace(parsed);
     setVerification(null);
 
@@ -88,9 +91,13 @@ export default function Home() {
     setShowCapture(false);
     setScreen("analysis");
 
-    setTimeout(() => {
+    window.setTimeout(() => {
       setScreen("diagnosis");
     }, 1400);
+  }
+
+  function startDemo() {
+    analyze(DEMO_TRACE);
   }
 
   function runVerification() {
@@ -115,30 +122,8 @@ export default function Home() {
         "Resolved",
       );
 
-      const updated = saveInvestigation(investigation);
-
-      setInvestigations(updated);
+      setInvestigations(saveInvestigation(investigation));
     }
-  }
-
-  function openInvestigation(
-    investigation: Investigation,
-  ) {
-    setTrace(
-      `${investigation.errorType}\n    at ${investigation.file}:${investigation.line}`,
-    );
-
-    setParsedTrace(null);
-    setSourceContext(null);
-    setDiagnosis(null);
-    setFixSuggestion(null);
-    setVerification(null);
-
-    setScreen("analysis");
-
-    setTimeout(() => {
-      setScreen("dashboard");
-    }, 0);
   }
 
   function reset() {
@@ -157,8 +142,7 @@ export default function Home() {
         <Dashboard
           investigations={investigations}
           onCapture={() => setShowCapture(true)}
-          onPaste={() => setShowCapture(true)}
-          onOpen={openInvestigation}
+          onDemo={startDemo}
         />
       )}
 
@@ -188,8 +172,8 @@ export default function Home() {
       {screen === "verify" && (
         <Verify
           verification={verification}
-          onSuccess={() => setScreen("success")}
           onBack={() => setScreen("fix")}
+          onSuccess={() => setScreen("success")}
         />
       )}
 
@@ -205,7 +189,7 @@ export default function Home() {
           trace={trace}
           setTrace={setTrace}
           onClose={() => setShowCapture(false)}
-          onAnalyze={startAnalysis}
+          onAnalyze={() => analyze(trace)}
         />
       )}
     </main>
@@ -215,15 +199,13 @@ export default function Home() {
 function Dashboard({
   investigations,
   onCapture,
-  onPaste,
-  onOpen,
+  onDemo,
 }: {
   investigations: Investigation[];
   onCapture: () => void;
-  onPaste: () => void;
-  onOpen: (investigation: Investigation) => void;
+  onDemo: () => void;
 }) {
-  const resolvedCount = investigations.filter(
+  const resolved = investigations.filter(
     (item) => item.status === "Resolved",
   ).length;
 
@@ -266,12 +248,16 @@ function Dashboard({
           </button>
 
           <button
-            onClick={onPaste}
-            className="rounded-lg border border-zinc-800 px-5 py-3 text-sm text-zinc-400 hover:bg-zinc-900"
+            onClick={onDemo}
+            className="rounded-lg border border-emerald-400/30 bg-emerald-400/5 px-5 py-3 text-sm text-emerald-400 hover:bg-emerald-400/10"
           >
-            Paste stack trace
+            ▶ Try live demo
           </button>
         </div>
+
+        <p className="mt-3 text-[10px] text-zinc-700">
+          Demo runs the complete TraceLens pipeline with a known failure.
+        </p>
       </section>
 
       <section className="grid grid-cols-3 gap-2 sm:gap-3">
@@ -279,15 +265,13 @@ function Dashboard({
           label="Investigations"
           value={String(investigations.length).padStart(2, "0")}
         />
-
         <Stat
           label="Resolved"
-          value={String(resolvedCount).padStart(2, "0")}
+          value={String(resolved).padStart(2, "0")}
         />
-
         <Stat
           label="Verified"
-          value={String(resolvedCount).padStart(2, "0")}
+          value={String(resolved).padStart(2, "0")}
         />
       </section>
 
@@ -308,22 +292,21 @@ function Dashboard({
               </p>
 
               <p className="mt-2 text-xs text-zinc-800">
-                Capture your first failure to begin.
+                Run the demo or capture your first failure.
               </p>
             </div>
           ) : (
             investigations.map((item, index) => (
-              <button
+              <div
                 key={item.id}
-                onClick={() => onOpen(item)}
-                className={`block w-full px-4 py-4 text-left transition hover:bg-zinc-900/50 sm:px-5 ${
+                className={`px-4 py-4 sm:px-5 ${
                   index !== investigations.length - 1
                     ? "border-b border-zinc-900"
                     : ""
                 }`}
               >
                 <div className="flex items-start gap-3">
-                  <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
+                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
 
                   <div className="min-w-0 flex-1">
                     <div className="flex gap-3">
@@ -351,7 +334,7 @@ function Dashboard({
                     {item.status}
                   </span>
                 </div>
-              </button>
+              </div>
             ))
           )}
         </div>
@@ -363,26 +346,22 @@ function Dashboard({
         </p>
 
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-          {[
-            "Capture",
-            "Analyze",
-            "Trace",
-            "Fix",
-            "Verify",
-          ].map((step, index) => (
-            <div
-              key={step}
-              className="rounded-lg border border-zinc-900 bg-zinc-950 p-4"
-            >
-              <span className="font-mono text-[10px] text-zinc-700">
-                0{index + 1}
-              </span>
+          {["Capture", "Analyze", "Trace", "Fix", "Verify"].map(
+            (step, index) => (
+              <div
+                key={step}
+                className="rounded-lg border border-zinc-900 bg-zinc-950 p-4"
+              >
+                <span className="font-mono text-[10px] text-zinc-700">
+                  0{index + 1}
+                </span>
 
-              <p className="mt-6 text-xs text-zinc-400">
-                {step}
-              </p>
-            </div>
-          ))}
+                <p className="mt-6 text-xs text-zinc-400">
+                  {step}
+                </p>
+              </div>
+            ),
+          )}
         </div>
       </section>
 
@@ -459,10 +438,7 @@ function Diagnosis({
   const primaryFrame = parsedTrace?.frames[0];
 
   return (
-    <InvestigationShell
-      label="Diagnosis"
-      onBack={onBack}
-    >
+    <InvestigationShell label="Diagnosis" onBack={onBack}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="font-mono text-[10px] text-zinc-700">
@@ -471,8 +447,7 @@ function Diagnosis({
           </p>
 
           <h1 className="mt-3 text-3xl font-semibold">
-            {parsedTrace?.errorType ??
-              "UnknownError"}
+            {parsedTrace?.errorType ?? "UnknownError"}
           </h1>
 
           <p className="mt-2 font-mono text-[10px] text-red-400">
@@ -498,8 +473,7 @@ function Diagnosis({
       <div className="mt-10 overflow-hidden rounded-xl border border-zinc-900 bg-[#030405]">
         <div className="flex items-center justify-between border-b border-zinc-900 px-4 py-3">
           <span className="font-mono text-[10px] text-zinc-500">
-            {sourceContext?.file ??
-              "Source unavailable"}
+            {sourceContext?.file ?? "Source unavailable"}
           </span>
 
           {sourceContext && (
@@ -512,42 +486,40 @@ function Diagnosis({
 
         {sourceContext ? (
           <div className="overflow-x-auto py-3">
-            {sourceContext.lines.map(
-              (sourceLine) => (
-                <div
-                  key={sourceLine.number}
-                  className={`flex min-w-max px-4 py-1 ${
+            {sourceContext.lines.map((sourceLine) => (
+              <div
+                key={sourceLine.number}
+                className={`flex min-w-max px-4 py-1 ${
+                  sourceLine.isTarget
+                    ? "bg-red-400/10"
+                    : ""
+                }`}
+              >
+                <span
+                  className={`w-10 shrink-0 text-right font-mono text-[10px] ${
                     sourceLine.isTarget
-                      ? "bg-red-400/10"
-                      : ""
+                      ? "text-red-400"
+                      : "text-zinc-800"
                   }`}
                 >
-                  <span
-                    className={`w-10 shrink-0 text-right font-mono text-[10px] ${
-                      sourceLine.isTarget
-                        ? "text-red-400"
-                        : "text-zinc-800"
-                    }`}
-                  >
-                    {sourceLine.number}
-                  </span>
+                  {sourceLine.number}
+                </span>
 
-                  <span className="mx-4 font-mono text-[10px] text-zinc-800">
-                    |
-                  </span>
+                <span className="mx-4 font-mono text-[10px] text-zinc-800">
+                  |
+                </span>
 
-                  <code
-                    className={`font-mono text-[10px] ${
-                      sourceLine.isTarget
-                        ? "text-red-300"
-                        : "text-zinc-500"
-                    }`}
-                  >
-                    {sourceLine.code}
-                  </code>
-                </div>
-              ),
-            )}
+                <code
+                  className={`font-mono text-[10px] ${
+                    sourceLine.isTarget
+                      ? "text-red-300"
+                      : "text-zinc-500"
+                  }`}
+                >
+                  {sourceLine.code}
+                </code>
+              </div>
+            ))}
           </div>
         ) : (
           <div className="p-5 text-xs text-zinc-700">
@@ -571,8 +543,7 @@ function Diagnosis({
           </div>
 
           <h2 className="mt-4 text-lg font-medium text-zinc-200">
-            {diagnosis?.title ??
-              "Diagnosis unavailable"}
+            {diagnosis?.title ?? "Diagnosis unavailable"}
           </h2>
 
           <p className="mt-4 text-sm leading-7 text-zinc-400">
@@ -586,8 +557,7 @@ function Diagnosis({
             </p>
 
             <code className="font-mono text-[10px] leading-6 text-emerald-400">
-              {diagnosis?.evidence ??
-                "No evidence available"}
+              {diagnosis?.evidence ?? "No evidence available"}
             </code>
           </div>
         </div>
@@ -599,31 +569,26 @@ function Diagnosis({
 
           <div className="mt-5 space-y-4">
             {parsedTrace?.frames.length ? (
-              parsedTrace.frames.map(
-                (frame, index) => (
-                  <div
-                    key={`${frame.file}-${frame.line}-${index}`}
-                    className="flex gap-3"
-                  >
-                    <span className="font-mono text-[10px] text-zinc-800">
-                      {String(index + 1).padStart(
-                        2,
-                        "0",
-                      )}
-                    </span>
+              parsedTrace.frames.map((frame, index) => (
+                <div
+                  key={`${frame.file}-${frame.line}-${index}`}
+                  className="flex gap-3"
+                >
+                  <span className="font-mono text-[10px] text-zinc-800">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
 
-                    <span
-                      className={`font-mono text-[10px] ${
-                        index === 0
-                          ? "text-red-400"
-                          : "text-zinc-600"
-                      }`}
-                    >
-                      {frame.file}:{frame.line}
-                    </span>
-                  </div>
-                ),
-              )
+                  <span
+                    className={`font-mono text-[10px] ${
+                      index === 0
+                        ? "text-red-400"
+                        : "text-zinc-600"
+                    }`}
+                  >
+                    {frame.file}:{frame.line}
+                  </span>
+                </div>
+              ))
             ) : (
               <span className="text-xs text-zinc-700">
                 No stack frames found.
@@ -655,27 +620,14 @@ function Fix({
   onBack: () => void;
 }) {
   return (
-    <InvestigationShell
-      label="Suggested Fix"
-      onBack={onBack}
-    >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="font-mono text-[10px] uppercase tracking-wider text-emerald-400">
-            Fix engine
-          </p>
+    <InvestigationShell label="Suggested Fix" onBack={onBack}>
+      <p className="font-mono text-[10px] uppercase tracking-wider text-emerald-400">
+        Fix engine
+      </p>
 
-          <h1 className="mt-3 text-3xl font-semibold sm:text-4xl">
-            Minimal patch generated.
-          </h1>
-        </div>
-
-        {fixSuggestion && (
-          <span className="w-fit rounded-full bg-emerald-400/10 px-3 py-1.5 font-mono text-[10px] text-emerald-400">
-            {fixSuggestion.confidence} confidence
-          </span>
-        )}
-      </div>
+      <h1 className="mt-3 text-3xl font-semibold sm:text-4xl">
+        Minimal patch generated.
+      </h1>
 
       <div className="mt-8 rounded-xl border border-zinc-900 bg-zinc-950 p-5">
         <p className="font-mono text-[9px] uppercase tracking-wider text-zinc-700">
@@ -683,13 +635,11 @@ function Fix({
         </p>
 
         <h2 className="mt-3 text-lg font-medium text-zinc-200">
-          {diagnosis?.title ??
-            "Diagnosis unavailable"}
+          {diagnosis?.title ?? "Diagnosis unavailable"}
         </h2>
 
         <p className="mt-3 text-sm leading-7 text-zinc-500">
-          {diagnosis?.cause ??
-            "No diagnosis available."}
+          {diagnosis?.cause ?? "No diagnosis available."}
         </p>
       </div>
 
@@ -758,98 +708,61 @@ function CodePanel({
 
 function Verify({
   verification,
-  onSuccess,
   onBack,
+  onSuccess,
 }: {
   verification: VerificationResult | null;
-  onSuccess: () => void;
   onBack: () => void;
+  onSuccess: () => void;
 }) {
-  const passed =
-    verification?.status === "passed";
+  const passed = verification?.status === "passed";
 
   return (
-    <InvestigationShell
-      label="Verification"
-      onBack={onBack}
-    >
-      <p
-        className={`font-mono text-[10px] uppercase tracking-wider ${
-          passed
-            ? "text-emerald-400"
-            : "text-amber-400"
-        }`}
-      >
+    <InvestigationShell label="Verification" onBack={onBack}>
+      <p className="font-mono text-[10px] uppercase tracking-wider text-emerald-400">
         Verification engine
       </p>
 
-      <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold sm:text-4xl">
-            {passed
-              ? "Fix verified."
-              : "Verification failed."}
-          </h1>
+      <h1 className="mt-4 text-3xl font-semibold sm:text-4xl">
+        {passed
+          ? "Fix verified."
+          : "Verification failed."}
+      </h1>
 
-          <p className="mt-3 text-sm leading-6 text-zinc-600">
-            {passed
-              ? "The generated patch passed every available verification check."
-              : "The generated patch could not be verified by the current engine."}
-          </p>
-        </div>
-
-        {verification && (
-          <div
-            className={`w-fit rounded-full px-3 py-2 font-mono text-[10px] ${
-              passed
-                ? "bg-emerald-400/10 text-emerald-400"
-                : "bg-red-400/10 text-red-400"
-            }`}
-          >
-            {verification.passed} /{" "}
-            {verification.total} passed
-          </div>
-        )}
-      </div>
+      <p className="mt-3 text-sm leading-6 text-zinc-600">
+        {passed
+          ? "The generated patch passed every available verification check."
+          : "The generated patch could not be verified."}
+      </p>
 
       <div className="mt-10 rounded-xl border border-zinc-900 bg-zinc-950">
-        <div className="border-b border-zinc-900 px-5 py-4">
-          <p className="font-mono text-[9px] uppercase tracking-wider text-zinc-700">
-            Generated verification
-          </p>
-        </div>
+        {verification?.checks.map((check) => (
+          <div
+            key={check.name}
+            className="flex gap-4 border-b border-zinc-900 px-5 py-5 last:border-0"
+          >
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-400/10 font-mono text-[10px] text-emerald-400">
+              {check.passed ? "✓" : "×"}
+            </span>
 
-        <div className="divide-y divide-zinc-900">
-          {verification?.checks.map(
-            (check) => (
-              <div
-                key={check.name}
-                className="flex gap-4 px-5 py-5"
-              >
-                <span
-                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-mono text-[10px] ${
-                    check.passed
-                      ? "bg-emerald-400/10 text-emerald-400"
-                      : "bg-red-400/10 text-red-400"
-                  }`}
-                >
-                  {check.passed ? "✓" : "×"}
-                </span>
+            <div>
+              <p className="text-sm text-zinc-300">
+                {check.name}
+              </p>
 
-                <div>
-                  <p className="text-sm text-zinc-300">
-                    {check.name}
-                  </p>
-
-                  <p className="mt-1 text-xs leading-6 text-zinc-600">
-                    {check.detail}
-                  </p>
-                </div>
-              </div>
-            ),
-          )}
-        </div>
+              <p className="mt-1 text-xs leading-6 text-zinc-600">
+                {check.detail}
+              </p>
+            </div>
+          </div>
+        ))}
       </div>
+
+      {verification && (
+        <div className="mt-5 text-center font-mono text-xs text-emerald-400">
+          {verification.passed} / {verification.total} passed
+        </div>
+      )}
 
       {passed && (
         <button
@@ -891,8 +804,7 @@ function Success({
 
         {verification && (
           <p className="mt-5 font-mono text-xs text-zinc-600">
-            {verification.passed} /{" "}
-            {verification.total} verification checks passed
+            {verification.passed} / {verification.total} verification checks passed
           </p>
         )}
 
@@ -942,9 +854,7 @@ function CaptureModal({
 
         <textarea
           value={trace}
-          onChange={(event) =>
-            setTrace(event.target.value)
-          }
+          onChange={(event) => setTrace(event.target.value)}
           placeholder="Paste stack trace..."
           className="mt-6 h-40 w-full resize-none rounded-lg border border-zinc-900 bg-black p-4 font-mono text-[10px] leading-6 text-zinc-300 outline-none placeholder:text-zinc-800 focus:border-zinc-700"
         />

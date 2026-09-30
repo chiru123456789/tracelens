@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-
+import { parseTrace } from "@/lib/trace-parser";
 type Screen =
   | "dashboard"
   | "analysis"
@@ -13,21 +13,24 @@ type Screen =
 const investigations = [
   {
     file: "PaymentService.java",
-    line: "Line 47",
+    line: "47",
     status: "Resolved",
     type: "NullPointerException",
+    time: "2m ago",
   },
   {
     file: "AuthController.java",
-    line: "Line 82",
+    line: "82",
     status: "Open",
     type: "AuthenticationError",
+    time: "18m ago",
   },
   {
     file: "DatabaseClient.ts",
-    line: "Line 116",
+    line: "116",
     status: "Resolved",
     type: "ConnectionError",
+    time: "1h ago",
   },
 ];
 
@@ -43,15 +46,19 @@ export default function Home() {
   const [trace, setTrace] = useState("");
 
   function startAnalysis() {
-    if (!trace.trim()) return;
+  if (!trace.trim()) return;
 
-    setShowCapture(false);
-    setScreen("analysis");
+  const parsed = parseTrace(trace);
 
-    setTimeout(() => {
-      setScreen("diagnosis");
-    }, 1400);
-  }
+  console.log("TraceLens parsed trace:", parsed);
+
+  setShowCapture(false);
+  setScreen("analysis");
+
+  setTimeout(() => {
+    setScreen("diagnosis");
+  }, 1400);
+}
 
   function reset() {
     setTrace("");
@@ -59,7 +66,7 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-[#07090d] text-white">
+    <main className="min-h-screen bg-[#05070a] text-white">
       {screen === "dashboard" && (
         <Dashboard
           onCapture={() => setShowCapture(true)}
@@ -67,9 +74,7 @@ export default function Home() {
         />
       )}
 
-      {screen === "analysis" && (
-        <Analysis trace={trace} />
-      )}
+      {screen === "analysis" && <Analysis trace={trace} />}
 
       {screen === "diagnosis" && (
         <Diagnosis
@@ -106,7 +111,7 @@ export default function Home() {
   );
 }
 
-/* ---------------- Dashboard ---------------- */
+/* Dashboard */
 
 function Dashboard({
   onCapture,
@@ -116,107 +121,148 @@ function Dashboard({
   onPaste: () => void;
 }) {
   return (
-    <div className="mx-auto max-w-6xl px-5 py-8 sm:px-8">
+    <div className="mx-auto min-h-screen max-w-6xl px-4 py-4 sm:px-8 sm:py-8">
       <Header />
 
-      <section className="py-20 text-center sm:py-28">
-        <p className="mb-4 font-mono text-xs uppercase tracking-[0.25em] text-emerald-400">
-          Failure → Cause → Fix → Verify
-        </p>
+      <div className="mt-5 flex items-center gap-2 rounded-lg border border-zinc-900 bg-zinc-950 px-3 py-2 font-mono text-[10px] text-zinc-600">
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+        TRACE ENGINE
+        <span className="text-zinc-800">/</span>
+        READY
+        <span className="ml-auto">LOCAL SESSION</span>
+      </div>
 
-        <h1 className="mx-auto max-w-3xl text-4xl font-semibold tracking-tight sm:text-6xl">
-          Understand failures.
-          <br />
-          <span className="text-zinc-500">Fix faster.</span>
-        </h1>
+      <section className="py-16 sm:py-24">
+        <div className="max-w-3xl">
+          <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-emerald-400">
+            Developer debugging system
+          </p>
 
-        <p className="mx-auto mt-6 max-w-xl text-sm leading-6 text-zinc-400 sm:text-base">
-          TraceLens turns errors, logs, screenshots, and stack traces into a
-          clear debugging path from failure to verified fix.
-        </p>
+          <h1 className="mt-5 text-4xl font-semibold leading-[1.05] tracking-tight sm:text-6xl">
+            Understand failures.
+            <br />
+            <span className="text-zinc-600">Fix faster.</span>
+          </h1>
 
-        <div className="mt-9 flex flex-col justify-center gap-3 sm:flex-row">
-          <button
-            onClick={onCapture}
-            className="rounded-lg bg-white px-5 py-3 text-sm font-medium text-black transition hover:bg-zinc-200"
-          >
-            Capture an Error
-          </button>
+          <p className="mt-6 max-w-xl text-sm leading-7 text-zinc-500 sm:text-base">
+            Capture a failure. Trace it to the source. Understand the cause.
+            Verify the fix.
+          </p>
 
-          <button
-            onClick={onPaste}
-            className="rounded-lg border border-zinc-800 px-5 py-3 text-sm text-zinc-300 transition hover:border-zinc-700 hover:bg-zinc-900"
-          >
-            Paste Trace
-          </button>
+          <div className="mt-8 flex flex-col gap-2 sm:flex-row">
+            <button
+              onClick={onCapture}
+              className="rounded-lg bg-white px-5 py-3 text-sm font-medium text-black transition hover:bg-zinc-200"
+            >
+              + Capture an error
+            </button>
+
+            <button
+              onClick={onPaste}
+              className="rounded-lg border border-zinc-800 px-5 py-3 text-sm text-zinc-400 transition hover:border-zinc-700 hover:bg-zinc-900"
+            >
+              Paste stack trace
+            </button>
+          </div>
         </div>
       </section>
 
-      <section>
-        <div className="mb-4 flex items-center justify-between">
+      <section className="grid grid-cols-3 gap-2 sm:gap-3">
+        <Stat label="Investigations" value="03" />
+        <Stat label="Resolved" value="02" />
+        <Stat label="Verified" value="02" />
+      </section>
+
+      <section className="mt-12">
+        <div className="mb-4 flex items-end justify-between">
           <div>
-            <h2 className="text-sm font-medium text-zinc-200">
+            <p className="text-sm font-medium text-zinc-200">
               Recent investigations
-            </h2>
+            </p>
+
             <p className="mt-1 text-xs text-zinc-600">
-              Your latest debugging sessions
+              Latest failures traced by TraceLens
             </p>
           </div>
 
-          <span className="font-mono text-xs text-zinc-600">03</span>
+          <span className="font-mono text-[10px] text-zinc-700">
+            VIEW ALL →
+          </span>
         </div>
 
-        <div className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950">
+        <div className="overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950">
           {investigations.map((item, index) => (
             <div
               key={item.file}
-              className={`flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between ${
+              className={`px-4 py-4 sm:px-5 ${
                 index !== investigations.length - 1
-                  ? "border-b border-zinc-800"
+                  ? "border-b border-zinc-900"
                   : ""
               }`}
             >
-              <div>
-                <div className="flex items-center gap-3">
-                  <span className="font-mono text-sm text-zinc-200">
-                    {item.file}
-                  </span>
+              <div className="flex items-start gap-3">
+                <div
+                  className={`mt-1.5 h-1.5 w-1.5 rounded-full ${
+                    item.status === "Resolved"
+                      ? "bg-emerald-400"
+                      : "bg-amber-400"
+                  }`}
+                />
 
-                  <span className="font-mono text-xs text-zinc-600">
-                    {item.line}
-                  </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                    <span className="truncate font-mono text-xs text-zinc-300">
+                      {item.file}
+                    </span>
+
+                    <span className="font-mono text-[10px] text-zinc-700">
+                      :{item.line}
+                    </span>
+                  </div>
+
+                  <div className="mt-1 flex gap-3">
+                    <span className="text-[10px] text-zinc-600">
+                      {item.type}
+                    </span>
+
+                    <span className="text-[10px] text-zinc-800">
+                      {item.time}
+                    </span>
+                  </div>
                 </div>
 
-                <p className="mt-1 text-xs text-zinc-600">{item.type}</p>
+                <span
+                  className={`shrink-0 rounded-full px-2 py-1 text-[9px] ${
+                    item.status === "Resolved"
+                      ? "bg-emerald-400/10 text-emerald-400"
+                      : "bg-amber-400/10 text-amber-400"
+                  }`}
+                >
+                  {item.status}
+                </span>
               </div>
-
-              <span
-                className={`w-fit rounded-full px-2.5 py-1 text-xs ${
-                  item.status === "Resolved"
-                    ? "bg-emerald-400/10 text-emerald-400"
-                    : "bg-amber-400/10 text-amber-400"
-                }`}
-              >
-                {item.status}
-              </span>
             </div>
           ))}
         </div>
       </section>
 
-      <section className="py-20">
-        <div className="grid gap-3 sm:grid-cols-5">
+      <section className="mt-12">
+        <p className="mb-4 text-sm font-medium text-zinc-200">
+          Debugging pipeline
+        </p>
+
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
           {["Capture", "Analyze", "Trace", "Fix", "Verify"].map(
             (step, index) => (
               <div
                 key={step}
-                className="rounded-lg border border-zinc-800 bg-zinc-950 p-4"
+                className="rounded-lg border border-zinc-900 bg-zinc-950 p-4"
               >
-                <span className="font-mono text-xs text-zinc-600">
+                <span className="font-mono text-[10px] text-zinc-700">
                   0{index + 1}
                 </span>
 
-                <p className="mt-8 text-sm text-zinc-300">{step}</p>
+                <p className="mt-6 text-xs text-zinc-400">{step}</p>
               </div>
             ),
           )}
@@ -228,68 +274,63 @@ function Dashboard({
   );
 }
 
-/* ---------------- Analysis ---------------- */
+/* Analysis */
 
 function Analysis({ trace }: { trace: string }) {
   return (
-    <div className="mx-auto max-w-4xl px-5 py-8 sm:px-8">
-      <Header />
+    <InvestigationShell label="Analysis" onBack={() => {}}>
+      <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-emerald-400">
+        Trace engine running
+      </p>
 
-      <section className="py-20">
-        <p className="font-mono text-xs uppercase tracking-[0.2em] text-emerald-400">
-          Analysis
-        </p>
+      <h1 className="mt-4 text-3xl font-semibold sm:text-4xl">
+        Tracing failure...
+      </h1>
 
-        <h1 className="mt-3 text-3xl font-semibold">
-          Tracing your failure...
-        </h1>
+      <p className="mt-3 max-w-xl text-sm leading-6 text-zinc-600">
+        Parsing evidence and mapping the failure to its likely source.
+      </p>
 
-        <p className="mt-3 max-w-xl text-sm leading-6 text-zinc-500">
-          TraceLens is parsing the evidence and mapping the failure to its
-          likely source.
-        </p>
-
-        <div className="mt-10 space-y-3">
-          {[
-            "Evidence captured",
-            "Stack trace parsed",
-            "Source location identified",
-            "Root cause analysis",
-          ].map((step, index) => (
-            <div
-              key={step}
-              className="flex items-center gap-4 rounded-lg border border-zinc-800 bg-zinc-950 px-4 py-4"
+      <div className="mt-10 space-y-2">
+        {[
+          "Evidence captured",
+          "Stack trace parsed",
+          "Source location identified",
+          "Root cause analysis",
+        ].map((step, index) => (
+          <div
+            key={step}
+            className="flex items-center gap-4 rounded-lg border border-zinc-900 bg-zinc-950 px-4 py-4"
+          >
+            <span
+              className={`flex h-6 w-6 items-center justify-center rounded-full font-mono text-[10px] ${
+                index < 2
+                  ? "bg-emerald-400/10 text-emerald-400"
+                  : "bg-zinc-900 text-zinc-600"
+              }`}
             >
-              <span
-                className={`flex h-6 w-6 items-center justify-center rounded-full font-mono text-xs ${
-                  index < 2
-                    ? "bg-emerald-400/10 text-emerald-400"
-                    : "bg-zinc-800 text-zinc-500"
-                }`}
-              >
-                {index < 2 ? "✓" : "•"}
-              </span>
+              {index < 2 ? "✓" : "•"}
+            </span>
 
-              <span className="text-sm text-zinc-300">{step}</span>
-            </div>
-          ))}
-        </div>
+            <span className="text-xs text-zinc-400">{step}</span>
+          </div>
+        ))}
+      </div>
 
-        <div className="mt-8 rounded-lg border border-zinc-800 bg-black/30 p-5">
-          <p className="mb-3 text-xs uppercase tracking-wider text-zinc-600">
-            Captured evidence
-          </p>
+      <div className="mt-8 rounded-lg border border-zinc-900 bg-black p-4">
+        <p className="mb-3 font-mono text-[9px] uppercase tracking-wider text-zinc-700">
+          Captured evidence
+        </p>
 
-          <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-xs leading-6 text-zinc-500">
-            {trace}
-          </pre>
-        </div>
-      </section>
-    </div>
+        <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[10px] leading-6 text-zinc-600">
+          {trace}
+        </pre>
+      </div>
+    </InvestigationShell>
   );
 }
 
-/* ---------------- Diagnosis ---------------- */
+/* Diagnosis */
 
 function Diagnosis({
   onFix,
@@ -299,13 +340,10 @@ function Diagnosis({
   onBack: () => void;
 }) {
   return (
-    <InvestigationShell
-      label="Diagnosis"
-      onBack={onBack}
-    >
-      <div className="grid gap-5 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <p className="font-mono text-xs text-zinc-600">
+    <InvestigationShell label="Diagnosis" onBack={onBack}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="font-mono text-[10px] text-zinc-700">
             PAYMENT SERVICE
           </p>
 
@@ -313,54 +351,58 @@ function Diagnosis({
             NullPointerException
           </h1>
 
-          <div className="mt-3 flex gap-3 font-mono text-xs">
-            <span className="text-red-400">PaymentService.java:47</span>
-            <span className="text-zinc-700">•</span>
-            <span className="text-zinc-500">94% confidence</span>
-          </div>
-
-          <div className="mt-10 rounded-xl border border-zinc-800 bg-zinc-950 p-5">
-            <p className="text-xs uppercase tracking-wider text-zinc-600">
-              Root cause
-            </p>
-
-            <p className="mt-4 text-sm leading-7 text-zinc-300">
-              <code className="rounded bg-zinc-900 px-1.5 py-1 font-mono text-xs text-emerald-400">
-                customer
-              </code>{" "}
-              can be null before{" "}
-              <code className="rounded bg-zinc-900 px-1.5 py-1 font-mono text-xs text-emerald-400">
-                getPaymentMethod()
-              </code>{" "}
-              is called.
-            </p>
-
-            <p className="mt-4 text-sm leading-7 text-zinc-500">
-              The failure originates at line 47 because the payment flow does
-              not validate the customer object before accessing it.
-            </p>
-          </div>
+          <p className="mt-2 font-mono text-[10px] text-red-400">
+            PaymentService.java:47
+          </p>
         </div>
 
-        <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-5">
-          <p className="text-xs uppercase tracking-wider text-zinc-600">
+        <span className="w-fit rounded-full bg-emerald-400/10 px-3 py-1.5 font-mono text-[10px] text-emerald-400">
+          94% confidence
+        </span>
+      </div>
+
+      <div className="mt-10 grid gap-3 lg:grid-cols-3">
+        <div className="rounded-xl border border-zinc-900 bg-zinc-950 p-5 lg:col-span-2">
+          <p className="font-mono text-[9px] uppercase tracking-wider text-zinc-700">
+            Root cause
+          </p>
+
+          <p className="mt-4 text-sm leading-7 text-zinc-300">
+            <code className="rounded bg-zinc-900 px-1.5 py-1 font-mono text-xs text-emerald-400">
+              customer
+            </code>{" "}
+            can be null before{" "}
+            <code className="rounded bg-zinc-900 px-1.5 py-1 font-mono text-xs text-emerald-400">
+              getPaymentMethod()
+            </code>{" "}
+            is called.
+          </p>
+
+          <p className="mt-4 text-xs leading-6 text-zinc-600">
+            The payment flow does not validate the customer object before
+            accessing it.
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-zinc-900 bg-zinc-950 p-5">
+          <p className="font-mono text-[9px] uppercase tracking-wider text-zinc-700">
             Failure path
           </p>
 
-          <div className="mt-5 space-y-3">
+          <div className="mt-5 space-y-4">
             {[
               "PaymentController.java:23",
               "PaymentService.java:42",
               "PaymentService.java:47",
             ].map((location, index) => (
               <div key={location} className="flex gap-3">
-                <span className="font-mono text-xs text-zinc-700">
+                <span className="font-mono text-[10px] text-zinc-800">
                   0{index + 1}
                 </span>
 
                 <span
-                  className={`font-mono text-xs ${
-                    index === 2 ? "text-red-400" : "text-zinc-500"
+                  className={`font-mono text-[10px] ${
+                    index === 2 ? "text-red-400" : "text-zinc-600"
                   }`}
                 >
                   {location}
@@ -373,7 +415,7 @@ function Diagnosis({
 
       <button
         onClick={onFix}
-        className="mt-8 w-full rounded-lg bg-white px-4 py-3 text-sm font-medium text-black transition hover:bg-zinc-200"
+        className="mt-8 w-full rounded-lg bg-white px-4 py-3 text-xs font-medium text-black transition hover:bg-zinc-200"
       >
         Generate suggested fix →
       </button>
@@ -381,7 +423,7 @@ function Diagnosis({
   );
 }
 
-/* ---------------- Fix ---------------- */
+/* Fix */
 
 function Fix({
   onVerify,
@@ -391,60 +433,50 @@ function Fix({
   onBack: () => void;
 }) {
   return (
-    <InvestigationShell
-      label="Suggested Fix"
-      onBack={onBack}
-    >
-      <div className="mb-8">
-        <p className="font-mono text-xs text-zinc-600">
-          PAYMENT SERVICE / LINE 47
-        </p>
+    <InvestigationShell label="Suggested Fix" onBack={onBack}>
+      <p className="font-mono text-[10px] text-zinc-700">
+        PAYMENT SERVICE / LINE 47
+      </p>
 
-        <h1 className="mt-3 text-3xl font-semibold">
-          Prevent the null access.
-        </h1>
+      <h1 className="mt-3 text-3xl font-semibold">
+        Prevent the null access.
+      </h1>
 
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-500">
-          TraceLens recommends validating the customer before attempting to
-          access payment information.
-        </p>
-      </div>
+      <p className="mt-3 max-w-xl text-sm leading-6 text-zinc-600">
+        Add an explicit validation before accessing the customer's payment
+        method.
+      </p>
 
-      <div className="overflow-hidden rounded-xl border border-zinc-800 bg-[#05070a]">
-        <div className="border-b border-zinc-800 px-4 py-3">
-          <span className="font-mono text-xs text-zinc-600">
+      <div className="mt-8 overflow-hidden rounded-xl border border-zinc-900 bg-[#030405]">
+        <div className="border-b border-zinc-900 px-4 py-3">
+          <span className="font-mono text-[10px] text-zinc-700">
             PaymentService.java
           </span>
         </div>
 
-        <pre className="overflow-x-auto p-5 font-mono text-xs leading-7">
+        <pre className="overflow-x-auto p-5 font-mono text-[10px] leading-7">
           <code>
-            <span className="text-zinc-600">45</span>{"  "}
-            <span className="text-zinc-500">
+            <span className="text-zinc-700">45</span>{" "}
+            <span className="text-zinc-600">
               PaymentMethod method = customer.getPaymentMethod();
             </span>
             {"\n"}
-            <span className="text-red-400">46 -</span>{"  "}
-            <span className="text-red-300/70">
-              PaymentMethod method = customer.getPaymentMethod();
-            </span>
-            {"\n"}
-            <span className="text-emerald-400">46 +</span>{"  "}
+            <span className="text-emerald-500">46 +</span>{" "}
             <span className="text-emerald-300">
               if (customer == null) throw new IllegalArgumentException(
             </span>
             {"\n"}
-            <span className="text-emerald-400">47 +</span>{"  "}
+            <span className="text-emerald-500">47 +</span>{" "}
             <span className="text-emerald-300">
               {"    \"Customer is required\""}
             </span>
             {"\n"}
-            <span className="text-emerald-400">48 +</span>{"  "}
+            <span className="text-emerald-500">48 +</span>{" "}
             <span className="text-emerald-300">
               );
             </span>
             {"\n"}
-            <span className="text-emerald-400">49 +</span>{"  "}
+            <span className="text-emerald-500">49 +</span>{" "}
             <span className="text-emerald-300">
               PaymentMethod method = customer.getPaymentMethod();
             </span>
@@ -452,20 +484,9 @@ function Fix({
         </pre>
       </div>
 
-      <div className="mt-5 rounded-xl border border-zinc-800 bg-zinc-950 p-5">
-        <p className="text-xs uppercase tracking-wider text-zinc-600">
-          Why this fix
-        </p>
-
-        <p className="mt-3 text-sm leading-6 text-zinc-400">
-          The guard converts an unexpected null dereference into an explicit
-          validation failure that can be handled by the caller.
-        </p>
-      </div>
-
       <button
         onClick={onVerify}
-        className="mt-8 w-full rounded-lg bg-white px-4 py-3 text-sm font-medium text-black transition hover:bg-zinc-200"
+        className="mt-8 w-full rounded-lg bg-white px-4 py-3 text-xs font-medium text-black transition hover:bg-zinc-200"
       >
         Generate verification test →
       </button>
@@ -473,7 +494,7 @@ function Fix({
   );
 }
 
-/* ---------------- Verification ---------------- */
+/* Verify */
 
 function Verify({
   onSuccess,
@@ -483,57 +504,49 @@ function Verify({
   onBack: () => void;
 }) {
   return (
-    <InvestigationShell
-      label="Verification"
-      onBack={onBack}
-    >
-      <p className="font-mono text-xs text-zinc-600">
+    <InvestigationShell label="Verification" onBack={onBack}>
+      <p className="font-mono text-[10px] text-zinc-700">
         GENERATED TEST SUITE
       </p>
 
-      <h1 className="mt-3 text-3xl font-semibold">
-        Verify the proposed fix.
-      </h1>
+      <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <h1 className="text-3xl font-semibold">
+          Verify the proposed fix.
+        </h1>
 
-      <p className="mt-3 max-w-xl text-sm leading-6 text-zinc-500">
-        TraceLens generated tests covering the failure condition and the normal
-        payment path.
-      </p>
+        <span className="font-mono text-xs text-emerald-400">
+          3 / 3 PASSED
+        </span>
+      </div>
 
-      <div className="mt-10 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950">
-        <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-4">
-          <span className="font-mono text-xs text-zinc-500">
+      <div className="mt-10 overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950">
+        <div className="border-b border-zinc-900 px-5 py-4">
+          <span className="font-mono text-[10px] text-zinc-600">
             PaymentServiceTest.java
           </span>
-
-          <span className="text-xs text-emerald-400">
-            3 / 3 passed
-          </span>
         </div>
 
-        <div className="divide-y divide-zinc-900">
-          {[
-            "rejects null customer",
-            "accepts valid customer",
-            "returns expected payment method",
-          ].map((test) => (
-            <div
-              key={test}
-              className="flex items-center gap-3 px-5 py-4"
-            >
-              <span className="text-emerald-400">✓</span>
+        {[
+          "rejects null customer",
+          "accepts valid customer",
+          "returns expected payment method",
+        ].map((test) => (
+          <div
+            key={test}
+            className="flex items-center gap-3 border-b border-zinc-900 px-5 py-4 last:border-0"
+          >
+            <span className="text-emerald-400">✓</span>
 
-              <span className="font-mono text-xs text-zinc-400">
-                {test}
-              </span>
-            </div>
-          ))}
-        </div>
+            <span className="font-mono text-[10px] text-zinc-500">
+              {test}
+            </span>
+          </div>
+        ))}
       </div>
 
       <button
         onClick={onSuccess}
-        className="mt-8 w-full rounded-lg bg-emerald-400 px-4 py-3 text-sm font-medium text-black transition hover:bg-emerald-300"
+        className="mt-8 w-full rounded-lg bg-emerald-400 px-4 py-3 text-xs font-medium text-black transition hover:bg-emerald-300"
       >
         Mark investigation resolved →
       </button>
@@ -541,7 +554,7 @@ function Verify({
   );
 }
 
-/* ---------------- Success ---------------- */
+/* Success */
 
 function Success({ onReset }: { onReset: () => void }) {
   return (
@@ -551,36 +564,36 @@ function Success({ onReset }: { onReset: () => void }) {
           ✓
         </div>
 
-        <p className="mt-8 font-mono text-xs uppercase tracking-[0.2em] text-emerald-400">
+        <p className="mt-8 font-mono text-[10px] uppercase tracking-[0.2em] text-emerald-400">
           Investigation resolved
         </p>
 
-        <h1 className="mt-4 text-4xl font-semibold tracking-tight">
+        <h1 className="mt-4 text-4xl font-semibold tracking-tight sm:text-5xl">
           Failure traced.
           <br />
           Fix verified.
         </h1>
 
-        <p className="mx-auto mt-5 max-w-md text-sm leading-6 text-zinc-500">
-          TraceLens connected the failure to its source, explained the root
-          cause, proposed a fix, and verified it with generated tests.
+        <p className="mx-auto mt-5 max-w-md text-sm leading-6 text-zinc-600">
+          TraceLens connected the failure to its source, explained the cause,
+          proposed a fix, and verified it with generated tests.
         </p>
 
         <div className="mt-10 grid grid-cols-4 gap-2">
           {["Captured", "Traced", "Fixed", "Verified"].map((step) => (
             <div
               key={step}
-              className="rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-4"
+              className="rounded-lg border border-zinc-900 bg-zinc-950 px-2 py-4"
             >
               <div className="text-emerald-400">✓</div>
-              <p className="mt-2 text-xs text-zinc-500">{step}</p>
+              <p className="mt-2 text-[9px] text-zinc-600">{step}</p>
             </div>
           ))}
         </div>
 
         <button
           onClick={onReset}
-          className="mt-10 rounded-lg border border-zinc-800 px-5 py-3 text-sm text-zinc-300 transition hover:bg-zinc-900"
+          className="mt-10 rounded-lg border border-zinc-800 px-5 py-3 text-xs text-zinc-400 transition hover:bg-zinc-900"
         >
           Back to TraceLens
         </button>
@@ -589,7 +602,7 @@ function Success({ onReset }: { onReset: () => void }) {
   );
 }
 
-/* ---------------- Capture Modal ---------------- */
+/* Capture */
 
 function CaptureModal({
   trace,
@@ -603,20 +616,26 @@ function CaptureModal({
   onAnalyze: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-5 backdrop-blur-sm">
-      <div className="w-full max-w-lg rounded-xl border border-zinc-800 bg-[#0b0e13] p-6 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-3 backdrop-blur-sm sm:items-center sm:p-5">
+      <div className="w-full max-w-lg rounded-xl border border-zinc-800 bg-[#0a0c10] p-5 shadow-2xl sm:p-6">
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="text-lg font-medium">Capture an error</h2>
+            <p className="font-mono text-[9px] uppercase tracking-wider text-emerald-400">
+              New investigation
+            </p>
 
-            <p className="mt-1 text-sm text-zinc-500">
+            <h2 className="mt-2 text-lg font-medium">
+              Capture an error
+            </h2>
+
+            <p className="mt-1 text-xs text-zinc-600">
               Give TraceLens the failure evidence.
             </p>
           </div>
 
           <button
             onClick={onClose}
-            className="text-zinc-600 hover:text-zinc-300"
+            className="text-zinc-700 hover:text-zinc-300"
           >
             ✕
           </button>
@@ -625,23 +644,23 @@ function CaptureModal({
         <textarea
           value={trace}
           onChange={(event) => setTrace(event.target.value)}
-          placeholder="Paste your stack trace here..."
-          className="mt-6 h-40 w-full resize-none rounded-lg border border-zinc-800 bg-black/40 p-4 font-mono text-xs text-zinc-300 outline-none placeholder:text-zinc-700 focus:border-zinc-600"
+          placeholder="Paste stack trace..."
+          className="mt-6 h-40 w-full resize-none rounded-lg border border-zinc-900 bg-black p-4 font-mono text-[10px] leading-6 text-zinc-300 outline-none placeholder:text-zinc-800 focus:border-zinc-700"
         />
 
         <button
           onClick={onAnalyze}
           disabled={!trace.trim()}
-          className="mt-3 w-full rounded-lg bg-white px-4 py-3 text-sm font-medium text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-30"
+          className="mt-3 w-full rounded-lg bg-white px-4 py-3 text-xs font-medium text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-30"
         >
-          Analyze failure
+          Analyze failure →
         </button>
 
-        <div className="mt-5 grid grid-cols-3 gap-2">
+        <div className="mt-4 grid grid-cols-3 gap-2">
           {captureOptions.map((option) => (
             <button
               key={option}
-              className="rounded-lg border border-zinc-800 px-3 py-3 text-xs text-zinc-500 transition hover:bg-zinc-900"
+              className="rounded-lg border border-zinc-900 px-2 py-3 text-[9px] text-zinc-600 transition hover:bg-zinc-900"
             >
               {option}
             </button>
@@ -652,23 +671,40 @@ function CaptureModal({
   );
 }
 
-/* ---------------- Shared UI ---------------- */
+/* Shared */
 
 function Header() {
   return (
     <header className="flex items-center justify-between">
       <div className="flex items-center gap-2">
-        <div className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
+        <div className="h-2 w-2 rounded-full bg-emerald-400" />
 
         <span className="text-sm font-medium tracking-wide text-zinc-300">
           TraceLens
         </span>
       </div>
 
-      <div className="rounded-full border border-zinc-800 bg-zinc-900/60 px-3 py-1.5 text-xs text-zinc-500">
-        Developer Tools
+      <div className="rounded-full border border-zinc-900 bg-zinc-950 px-3 py-1.5 font-mono text-[9px] text-zinc-600">
+        DEV TOOLS
       </div>
     </header>
+  );
+}
+
+function Stat({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-lg border border-zinc-900 bg-zinc-950 p-4">
+      <p className="font-mono text-lg text-zinc-200">{value}</p>
+      <p className="mt-1 text-[9px] uppercase tracking-wider text-zinc-700">
+        {label}
+      </p>
+    </div>
   );
 }
 
@@ -682,31 +718,31 @@ function InvestigationShell({
   children: React.ReactNode;
 }) {
   return (
-    <div className="mx-auto max-w-5xl px-5 py-8 sm:px-8">
+    <div className="mx-auto max-w-5xl px-4 py-5 sm:px-8 sm:py-8">
       <Header />
 
-      <div className="mt-12 flex items-center justify-between border-b border-zinc-900 pb-5">
+      <div className="mt-8 flex items-center justify-between border-b border-zinc-900 pb-4">
         <button
           onClick={onBack}
-          className="text-sm text-zinc-500 transition hover:text-zinc-200"
+          className="text-xs text-zinc-600 transition hover:text-zinc-200"
         >
           ← Back
         </button>
 
-        <span className="font-mono text-xs uppercase tracking-wider text-zinc-600">
+        <span className="font-mono text-[9px] uppercase tracking-wider text-zinc-700">
           {label}
         </span>
       </div>
 
-      <section className="py-12">{children}</section>
+      <section className="py-10 sm:py-14">{children}</section>
     </div>
   );
 }
 
 function Footer() {
   return (
-    <footer className="border-t border-zinc-900 py-6 text-center text-xs text-zinc-700">
-      TraceLens · Developer debugging, traced end-to-end.
+    <footer className="mt-16 border-t border-zinc-900 py-6 text-center font-mono text-[9px] text-zinc-800">
+      TRACELENS / FAILURE → CAUSE → FIX → VERIFY
     </footer>
   );
 }

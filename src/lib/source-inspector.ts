@@ -10,6 +10,13 @@ export type SourceContext = {
   }[];
 };
 
+export type Diagnosis = {
+  title: string;
+  cause: string;
+  evidence: string;
+  confidence: "high" | "medium" | "low";
+};
+
 const DEMO_SOURCES: Record<string, string> = {
   "PaymentService.java": `package com.example;
 
@@ -88,5 +95,62 @@ export function inspectSource(
     startLine,
     endLine,
     lines,
+  };
+}
+
+export function diagnose(
+  errorType: string,
+  source: SourceContext | null,
+): Diagnosis {
+  if (!source) {
+    return {
+      title: "Source unavailable",
+      cause:
+        "TraceLens found the failure location but could not inspect the corresponding source code.",
+      evidence: "No matching source file was available.",
+      confidence: "low",
+    };
+  }
+
+  const target = source.lines.find((line) => line.isTarget);
+  const code = target?.code.trim() ?? "";
+
+  if (
+    errorType === "NullPointerException" &&
+    (code.includes("customer.") ||
+      code.includes("request.") ||
+      code.includes("user.") ||
+      code.includes("order."))
+  ) {
+    const objectName =
+      code.match(/\b(customer|request|user|order)\b/)?.[1] ?? "object";
+
+    return {
+      title: "Possible null dereference",
+      cause: `The code accesses ${objectName} without first proving that it is non-null.`,
+      evidence: `${source.file}:${source.line} → ${code}`,
+      confidence: "high",
+    };
+  }
+
+  if (
+    errorType === "IllegalStateException" &&
+    (code.includes("throw") || code.includes("state"))
+  ) {
+    return {
+      title: "Invalid application state",
+      cause:
+        "The failing path reaches an operation that expects a valid application state.",
+      evidence: `${source.file}:${source.line} → ${code}`,
+      confidence: "medium",
+    };
+  }
+
+  return {
+    title: "Failure requires deeper inspection",
+    cause:
+      "TraceLens located the failing source line, but the current deterministic rules do not have enough evidence to classify the root cause.",
+    evidence: `${source.file}:${source.line} → ${code || "source line unavailable"}`,
+    confidence: "low",
   };
 }
